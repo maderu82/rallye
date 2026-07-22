@@ -9,7 +9,19 @@ export default function LoginForm({ next }: { next?: string }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
 
   const [state, action, pending] = useActionState<State, FormData>(
-    async (_prev, formData) => (mode === "login" ? await login(formData) : await signup(formData)),
+    async (_prev, formData) => {
+      // Guard against autofill dropping the email into the password field
+      // (browser/DuckDuckGo autofill does this when it can't tell them apart).
+      const email = String(formData.get("email") ?? "").trim().toLowerCase();
+      const password = String(formData.get("password") ?? "");
+      if (email && password.trim().toLowerCase() === email) {
+        return {
+          error:
+            "Het wachtwoordveld bevat je e-mailadres — waarschijnlijk automatisch ingevuld. Klik in het wachtwoordveld, wis het en typ je wachtwoord.",
+        };
+      }
+      return mode === "login" ? await login(formData) : await signup(formData);
+    },
     null,
   );
 
