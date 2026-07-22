@@ -97,8 +97,19 @@ Open de Supabase SQL Editor en plak de inhoud van, op volgorde:
 
 ### 4. Organisatoraccount
 Maak in **Supabase → Authentication → Users** een gebruiker aan, of registreer via
-`/ontwerp/login`. Zet desgewenst e-mailbevestiging uit onder
-**Authentication → Providers → Email** voor een soepele demo.
+`/ontwerp/login`.
+
+> **Kan je niet inloggen / komt er geen bevestigingsmail?**
+> Supabase vereist standaard e-mailbevestiging, en de ingebouwde mailservice is
+> sterk gelimiteerd (levert vaak niets af). Kies één van deze opties:
+> - **Aanbevolen voor demo:** Authentication → **Sign In / Providers → Email** →
+>   zet **"Confirm email" UIT** → Save. Bestaande én nieuwe accounts kunnen dan
+>   direct inloggen.
+> - Of vink bij **Add user** de optie **"Auto Confirm User"** aan.
+> - Of bevestig een bestaande gebruiker handmatig via SQL:
+>   `update auth.users set email_confirmed_at = now() where email = 'jij@…';`
+> - Voor echte bevestigingsmails in productie: stel **eigen SMTP** in onder
+>   Authentication → Emails → SMTP Settings.
 
 ### 5. Starten
 ```bash

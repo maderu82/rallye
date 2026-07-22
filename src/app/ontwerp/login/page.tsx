@@ -23,7 +23,9 @@ export default async function LoginPage({
         </p>
         <LoginForm next={next} />
         <div className="mt-4 rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
-          🧪 Organisatoraccounts worden beheerd via Supabase Auth. Maak een account aan of log in met je e-mail.
+          🧪 Organisatoraccounts via Supabase Auth. Lukt inloggen niet en komt er geen bevestigingsmail? Zet dan
+          <b> Confirm email</b> uit in Supabase (Authentication → Providers → Email), of vink
+          <b> Auto Confirm User</b> aan bij het aanmaken van de gebruiker.
         </div>
       </div>
     </main>
