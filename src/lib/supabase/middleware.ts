@@ -10,9 +10,24 @@ type CookieToSet = { name: string; value: string; options: CookieOptions };
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // If Supabase env vars are missing/misconfigured, don't hard-500 the whole
+  // site from middleware — let requests through. The portal will still refuse
+  // access because auth can't succeed without a configured backend.
+  if (!url || !anonKey) {
+    if (request.nextUrl.pathname.startsWith("/ontwerp") && request.nextUrl.pathname !== "/ontwerp/login") {
+      const to = request.nextUrl.clone();
+      to.pathname = "/ontwerp/login";
+      return NextResponse.redirect(to);
+    }
+    return response;
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       cookies: {
         getAll() {
@@ -29,26 +44,31 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch {
+    // Backend unreachable — don't 500 the site; treat as unauthenticated.
+    user = null;
+  }
 
   const path = request.nextUrl.pathname;
   const isPortal = path.startsWith("/ontwerp");
   const isLogin = path === "/ontwerp/login";
 
   if (isPortal && !isLogin && !user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/ontwerp/login";
-    url.searchParams.set("next", path);
-    return NextResponse.redirect(url);
+    const to = request.nextUrl.clone();
+    to.pathname = "/ontwerp/login";
+    to.searchParams.set("next", path);
+    return NextResponse.redirect(to);
   }
 
   if (isLogin && user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/ontwerp";
-    url.search = "";
-    return NextResponse.redirect(url);
+    const to = request.nextUrl.clone();
+    to.pathname = "/ontwerp";
+    to.search = "";
+    return NextResponse.redirect(to);
   }
 
   return response;
