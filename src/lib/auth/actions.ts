@@ -20,7 +20,12 @@ export async function login(formData: FormData): Promise<{ error?: string }> {
           "Je e-mailadres is nog niet bevestigd. Zet in Supabase (Authentication → Providers → Email) 'Confirm email' uit, of bevestig de gebruiker handmatig — zie README.",
       };
     }
-    return { error: "Onjuiste inloggegevens (of onbevestigd account). Probeer opnieuw." };
+    // Surface the underlying reason so misconfig (wrong project/key, invalid
+    // credentials, unconfirmed) can be told apart.
+    const detail = [code, error.status ? `status ${error.status}` : "", error.message]
+      .filter(Boolean)
+      .join(" · ");
+    return { error: `Inloggen mislukt — ${detail || "onbekende fout"}. Controleer e-mail/wachtwoord en of Vercel naar hetzelfde Supabase-project wijst.` };
   }
 
   revalidatePath("/ontwerp", "layout");
