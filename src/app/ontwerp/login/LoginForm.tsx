@@ -18,11 +18,29 @@ export default function LoginForm({ next }: { next?: string }) {
       <input type="hidden" name="next" value={next ?? "/ontwerp"} />
       <div>
         <label className="field-label" htmlFor="email">E-mail</label>
-        <input id="email" name="email" type="email" required className="input" placeholder="jij@organisatie.nl" />
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          className="input"
+          placeholder="jij@organisatie.nl"
+        />
       </div>
       <div>
         <label className="field-label" htmlFor="password">Wachtwoord</label>
-        <input id="password" name="password" type="password" required className="input" placeholder="••••••••" />
+        <input
+          id="password"
+          name="password"
+          type="password"
+          required
+          autoComplete={mode === "login" ? "current-password" : "new-password"}
+          className="input"
+          placeholder="••••••••"
+        />
       </div>
       {state?.error ? <div className="feedback-err">❌ {state.error}</div> : null}
       {state?.message ? <div className="feedback-ok">✅ {state.message}</div> : null}
