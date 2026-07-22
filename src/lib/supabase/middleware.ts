@@ -25,10 +25,9 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
-  const supabase = createServerClient(
-    url,
-    anonKey,
-    {
+  let user = null;
+  try {
+    const supabase = createServerClient(url, anonKey, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -41,15 +40,12 @@ export async function updateSession(request: NextRequest) {
           );
         },
       },
-    },
-  );
-
-  let user = null;
-  try {
+    });
     const result = await supabase.auth.getUser();
     user = result.data.user;
   } catch {
-    // Backend unreachable — don't 500 the site; treat as unauthenticated.
+    // Misconfigured/unreachable backend — never 500 the whole site from
+    // middleware; treat the request as unauthenticated.
     user = null;
   }
 
