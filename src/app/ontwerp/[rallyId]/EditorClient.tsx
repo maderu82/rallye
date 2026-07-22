@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { Assignment, Leg, Point, Rally } from "@/lib/types";
+import { createClient } from "@/lib/supabase/client";
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE } from "@/lib/blocks";
 import {
   addPoint,
@@ -268,7 +269,7 @@ export default function EditorClient({
           </div>
         </div>
       ) : (
-        <LiveView points={points} teams={liveTeams} labelOf={labelOf} onRefresh={() => router.refresh()} />
+        <LiveView rallyId={rally.id} points={points} teams={liveTeams} labelOf={labelOf} onRefresh={() => router.refresh()} />
       )}
     </main>
   );
@@ -449,17 +450,33 @@ function LegSettings({
 const TEAM_COLORS = ["#534AB7", "#D85A30", "#0E7490", "#7A5D00"];
 
 function LiveView({
+  rallyId,
   points,
   teams,
   labelOf,
   onRefresh,
 }: {
+  rallyId: string;
   points: Point[];
   teams: LiveTeam[];
   labelOf: (p: Point) => string;
   onRefresh: () => void;
 }) {
   const maxIndex = Math.max(1, points.length - 1);
+
+  // Realtime: refresh team positions/scores as team_scores changes.
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`live:${rallyId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "team_scores", filter: `rally_id=eq.${rallyId}` }, onRefresh)
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+    // onRefresh is stable enough (router.refresh); rallyId drives resubscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rallyId]);
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[1fr_360px]">
       <div className="card">
@@ -484,11 +501,14 @@ function LiveView({
             );
           })}
         </svg>
-        <div className="mt-3 flex items-center justify-between">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <div className="rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
-            👀 Alleen meekijken: foto&apos;s en scores controleer je ná de rally.
+            👀 Alleen meekijken · <span className="font-bold text-teal">● live</span> — bijgewerkt zodra teams scoren.
           </div>
-          <button className="btn btn-ghost text-sm" onClick={onRefresh}>🔄 Ververs</button>
+          <div className="flex gap-2">
+            <Link href={`/ontwerp/${rallyId}/review`} className="btn btn-ghost text-sm">🔎 Nakijken</Link>
+            <button className="btn btn-ghost text-sm" onClick={onRefresh}>🔄 Ververs</button>
+          </div>
         </div>
       </div>
       <div className="card">

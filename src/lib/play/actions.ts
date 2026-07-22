@@ -125,6 +125,86 @@ export async function submitAnswer(
   return { ok: result.ok, complete: result.complete, feedback: result.feedback, score: await scoreOf(db, team.id), badge: result.badge };
 }
 
+// ── submit with an (optional) proof photo ────────────────────────────────────
+// Used by photo-search (required photo) and free-game (optional proof photo).
+// Uploads to the private `proof-photos` bucket via the service role, then grades.
+const PHOTO_BUCKET = "proof-photos";
+
+export async function submitAnswerWithPhoto(
+  assignmentId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, complete: false, feedback: "", score: 0, error: "Geen actief team." };
+  const { team, db } = ctx;
+
+  const { data: assignment } = await db.from("assignments").select("*").eq("id", assignmentId).maybeSingle();
+  if (!assignment || assignment.rally_id !== team.rally_id) {
+    return { ok: false, complete: false, feedback: "", score: await scoreOf(db, team.id), error: "Opdracht niet gevonden." };
+  }
+  const a = assignment as Assignment;
+
+  if (await isCompleted(db, team.id, assignmentId)) {
+    return { ok: true, complete: true, feedback: "Deze opdracht is al voltooid.", score: await scoreOf(db, team.id) };
+  }
+
+  // parse the JSON submission payload + optional file
+  let submission: Record<string, unknown> = {};
+  const raw = formData.get("submission");
+  if (typeof raw === "string" && raw) {
+    try {
+      submission = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      submission = {};
+    }
+  }
+
+  let photoPath: string | null = null;
+  const file = formData.get("photo");
+  if (file instanceof File && file.size > 0) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const stamp = `${team.id}-${assignmentId}`;
+    const path = `${team.rally_id}/${stamp}/${bytesToId(bytes.byteLength)}.jpg`;
+    const { error: upErr } = await db.storage
+      .from(PHOTO_BUCKET)
+      .upload(path, bytes, { contentType: file.type || "image/jpeg", upsert: true });
+    if (!upErr) photoPath = path;
+    submission.photo = photoPath != null;
+  }
+
+  const result = grade(a, submission);
+
+  await db.from("team_events").insert({
+    team_id: team.id,
+    rally_id: team.rally_id,
+    assignment_id: a.id,
+    point_id: a.point_id,
+    kind: result.kind,
+    points_delta: result.delta,
+    needs_review: result.needsReview ?? false,
+    photo_path: photoPath,
+    detail: { complete: result.complete, submission },
+  });
+
+  if (result.badge) {
+    await db.from("team_badges").insert({ team_id: team.id, name: result.badge.name, icon: result.badge.icon }).select();
+  }
+  if (result.complete) {
+    const { data: pt } = await db.from("points").select("position").eq("id", a.point_id).single();
+    if (pt) await db.from("teams").update({ current_index: Math.max(team.current_index, pt.position) }).eq("id", team.id);
+  }
+
+  return { ok: result.ok, complete: result.complete, feedback: result.feedback, score: await scoreOf(db, team.id), badge: result.badge };
+}
+
+// deterministic-ish object id from a length + a counter is not needed; use a
+// short unique-enough suffix derived from timestamp is unavailable in some
+// runtimes, so derive from crypto.
+function bytesToId(seedLen: number): string {
+  const rnd = globalThis.crypto?.randomUUID?.() ?? `${seedLen}-${Math.round(seedLen * 2654435761) % 1e9}`;
+  return rnd.replace(/-/g, "").slice(0, 16);
+}
+
 // ── use a hint ────────────────────────────────────────────────────────────────
 export async function useHint(assignmentId: string): Promise<ActionResult & { hintText?: string }> {
   const ctx = await currentTeam();

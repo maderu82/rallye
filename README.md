@@ -36,15 +36,25 @@ Gebouwd met **Next.js (App Router) + TypeScript + Tailwind** op **Vercel**, met
 - **Teams volgen**: live kaart met teamposities + voortgang per team (alleen
   meekijken; correcties ná de rally).
 
+- **Realtime klassement & tracking** via Supabase Realtime: de deelnemer ziet
+  het klassement live meebewegen; de organisator ziet teamposities/scores direct
+  updaten (`team_scores`-tabel, bijgehouden met triggers, secret-vrij, publiek
+  leesbaar voor gepubliceerde rally's).
+- **Foto-bewijs**: foto-zoek en vrij-spel foto's uploaden naar een privé
+  Supabase Storage-bucket (client-side verkleind), met een **nakijkscherm**
+  (`/ontwerp/[id]/review`) waar de organisator foto's bekijkt (signed URLs) en de
+  punten ná de rally corrigeert.
+
 **Beveiliging**
 - Row-Level Security: een organisator ziet/bewerkt uitsluitend zijn eigen rally's.
 - Al het deelnemersverkeer en alle beoordeling loopt via de Next.js-server met de
   service-role sleutel, zodat scores niet te manipuleren zijn.
+- `team_events` (met antwoord-inzendingen) is nooit direct leesbaar voor
+  deelnemers; het klassement leest een aparte, secret-vrije `team_scores`-tabel.
 
 ### Nog niet in deze iteratie (logische vervolgstappen)
-- Realtime klassement/tracking via Supabase Realtime (nu server-refresh).
-- Foto-upload naar Supabase Storage + review-scherm voor de organisator.
 - E-mailbevestiging / uitgebreider organisatorbeheer.
+- Onderwegvraag als speelbare interactie (nu getoond als etappe-notitie).
 
 ---
 
@@ -82,6 +92,8 @@ Open de Supabase SQL Editor en plak de inhoud van, op volgorde:
 1. `supabase/migrations/0001_init.sql` (schema + RLS)
 2. `supabase/migrations/0002_demo_seed.sql` (de demo-rally "Polderpuzzel rallye",
    teamcode **RLY-7H2K** — optioneel; laat weg in productie)
+3. `supabase/migrations/0003_realtime_scores.sql` (klassement-tabel + Realtime)
+4. `supabase/migrations/0004_storage.sql` (privé bucket voor bewijsfoto's)
 
 ### 4. Organisatoraccount
 Maak in **Supabase → Authentication → Users** een gebruiker aan, of registreer via

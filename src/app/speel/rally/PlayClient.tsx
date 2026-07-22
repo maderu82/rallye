@@ -4,7 +4,29 @@ import { useEffect, useMemo, useState } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE } from "@/lib/blocks";
-import { buyDigit, finishRally, leaveTeam, submitAnswer, useHint } from "@/lib/play/actions";
+import { buyDigit, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, useHint } from "@/lib/play/actions";
+import { createClient } from "@/lib/supabase/client";
+
+// Downscale a captured photo client-side to keep uploads small (<~8 MB action
+// limit) and fast on mobile connections.
+async function downscale(file: File, maxDim = 1600, quality = 0.8): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", quality));
+    return blob ?? file;
+  } catch {
+    return file;
+  }
+}
 
 // ============================================================================
 // Participant play flow. All scoring goes through server actions; this client
@@ -58,6 +80,42 @@ export default function PlayClient({
   const [badges, setBadges] = useState(state.badges.map((b) => ({ name: b.name, icon: b.icon })));
   const [lbOpen, setLbOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [remoteBoard, setRemoteBoard] = useState<LeaderboardRow[]>(leaderboard);
+
+  const rallyId = state.rally.id;
+  const teamId = state.team.id;
+
+  // Live leaderboard via Supabase Realtime: subscribe to team_scores changes for
+  // this rally and refetch on any update (other teams scoring, finishing, …).
+  useEffect(() => {
+    const supabase = createClient();
+    async function refetch() {
+      const { data } = await supabase
+        .from("team_scores")
+        .select("team_id,name,score,hints,current_index,finished")
+        .eq("rally_id", rallyId);
+      if (data) {
+        setRemoteBoard(
+          data.map((r) => ({
+            team_id: r.team_id,
+            name: r.name,
+            score: r.score,
+            hints: r.hints,
+            current_index: r.current_index,
+            finished: r.finished,
+            me: r.team_id === teamId,
+          })),
+        );
+      }
+    }
+    const channel = supabase
+      .channel(`scores:${rallyId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "team_scores", filter: `rally_id=eq.${rallyId}` }, refetch)
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [rallyId, teamId]);
 
   function toast(msg: string) {
     const id = Date.now() + Math.random();
@@ -75,12 +133,15 @@ export default function PlayClient({
 
   const atFinish = step >= waypoints.length;
 
-  // Live leaderboard with the player's running score merged in.
+  // Live leaderboard: realtime rows for other teams + the player's own running
+  // score (kept optimistic locally so it reflects instantly after each action).
   const liveBoard = useMemo(() => {
-    return leaderboard
-      .map((r) => (r.me ? { ...r, score } : r))
-      .sort((a, b) => b.score - a.score);
-  }, [leaderboard, score]);
+    const rows = remoteBoard.map((r) => (r.team_id === teamId ? { ...r, me: true, score } : r));
+    if (!rows.some((r) => r.team_id === teamId)) {
+      rows.push({ team_id: teamId, name: state.team.name, score, hints: state.hintsUsed, current_index: 0, finished: false, me: true });
+    }
+    return rows.sort((a, b) => b.score - a.score);
+  }, [remoteBoard, score, teamId, state.team.name, state.hintsUsed]);
 
   const title = atFinish
     ? "Finish"
@@ -379,6 +440,27 @@ function AssignmentCard({
     return r;
   }
 
+  // Submit with an optional proof photo (uploads to Storage server-side).
+  async function sendForm(submission: Record<string, unknown>, file?: File | null) {
+    setBusy(true);
+    const fd = new FormData();
+    fd.set("submission", JSON.stringify(submission));
+    if (file) {
+      const blob = await downscale(file);
+      fd.set("photo", blob, "proof.jpg");
+    }
+    const r = await submitAnswerWithPhoto(assignment.id, fd);
+    setBusy(false);
+    if (r.error) {
+      toast(r.error);
+      return r;
+    }
+    setFeedback({ ok: r.ok, msg: r.feedback });
+    onScored(r.score, r.badge);
+    if (r.complete) onComplete();
+    return r;
+  }
+
   async function doHint() {
     setBusy(true);
     const r = await useHint(assignment.id);
@@ -402,7 +484,7 @@ function AssignmentCard({
       {assignment.prompt ? <p className="mb-2.5 font-bold">{assignment.prompt}</p> : null}
 
       {!done ? (
-        <TypeBody type={assignment.type} cfg={cfg} busy={busy} send={send} toast={toast} />
+        <TypeBody type={assignment.type} cfg={cfg} busy={busy} send={send} sendForm={sendForm} toast={toast} />
       ) : null}
 
       {feedback ? (
@@ -441,17 +523,20 @@ function TypeBody({
   cfg,
   busy,
   send,
+  sendForm,
   toast,
 }: {
   type: PublicAssignment["type"];
   cfg: Record<string, unknown>;
   busy: boolean;
   send: (s: Record<string, unknown>) => Promise<{ ok: boolean }>;
+  sendForm: (s: Record<string, unknown>, file?: File | null) => Promise<{ ok: boolean }>;
   toast: (m: string) => void;
 }) {
   const [text, setText] = useState("");
   const [value, setValue] = useState<number>(Number(cfg.target ?? 0));
   const [disabledSigns, setDisabledSigns] = useState<Set<string>>(new Set());
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
 
   switch (type) {
     case "multiple_choice": {
@@ -559,18 +644,22 @@ function TypeBody({
       return (
         <div className="space-y-2">
           <label className="btn-demo block cursor-pointer text-center">
-            📷 Foto maken / kiezen
+            📷 Foto maken / kiezen{busy ? " — uploaden…" : ""}
             <input
               type="file"
               accept="image/*"
               capture="environment"
               className="hidden"
-              onChange={() => {
-                toast("📷 Foto vastgelegd");
-                send({ photo: true });
+              disabled={busy}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (!f) return;
+                toast("📷 Foto vastgelegd — uploaden…");
+                sendForm({ photo: true }, f);
               }}
             />
           </label>
+          <p className="text-[11px] text-polder-grey">De foto wordt als bewijs geüpload en na afloop door de organisator bekeken.</p>
         </div>
       );
 
@@ -610,8 +699,18 @@ function TypeBody({
             value={value}
             onChange={(e) => setValue(Number(e.target.value))}
           />
-          <button className="btn btn-purple w-full" disabled={busy} onClick={() => send({ selfScore: value })}>
-            Score indienen
+          <label className="btn-demo block cursor-pointer text-center">
+            {photoFile ? "📷 Bewijsfoto gekozen ✓" : "📷 Bewijsfoto maken (optioneel)"}
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button className="btn btn-purple w-full" disabled={busy} onClick={() => sendForm({ selfScore: value }, photoFile)}>
+            {busy ? "Indienen…" : "Score indienen"}
           </button>
         </div>
       );

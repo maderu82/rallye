@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { BlockType, HintMode, NavMode } from "@/lib/blocks";
 
 // ============================================================================
@@ -222,6 +223,43 @@ export async function updateAssignment(
 }
 
 // ── legs ──────────────────────────────────────────────────────────────────────
+// ── post-rally review (photos & manual scores) ──────────────────────────────
+/**
+ * Set the final awarded points for a reviewed submission. Records an append-only
+ * correction event (kind 'manual') for the difference and clears the review
+ * flag, so team totals and team_scores stay consistent.
+ */
+export async function reviewSubmission(rallyId: string, eventId: string, finalPoints: number) {
+  const db = await createClient();
+  const user = await requireUser(db);
+
+  // ownership check via RLS-enforced read
+  const { data: rally } = await db.from("rallies").select("id,owner_id").eq("id", rallyId).maybeSingle();
+  if (!rally || rally.owner_id !== user.id) throw new Error("Geen toegang tot deze rally.");
+
+  const admin = createAdminClient();
+  const { data: ev } = await admin
+    .from("team_events")
+    .select("id,team_id,rally_id,points_delta")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (!ev || ev.rally_id !== rallyId) throw new Error("Inzending niet gevonden.");
+
+  const delta = Math.round(finalPoints) - ev.points_delta;
+  if (delta !== 0) {
+    await admin.from("team_events").insert({
+      team_id: ev.team_id,
+      rally_id: rallyId,
+      kind: "manual",
+      points_delta: delta,
+      detail: { review: true, of: eventId },
+    });
+  }
+  await admin.from("team_events").update({ needs_review: false }).eq("id", eventId);
+
+  revalidatePath(`/ontwerp/${rallyId}/review`);
+}
+
 export async function updateLeg(
   rallyId: string,
   legId: string,

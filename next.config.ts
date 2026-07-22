@@ -3,7 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
-    // Server Actions are used for grading and designer mutations.
+    // Proof photos are uploaded through a Server Action; raise the body limit.
+    serverActions: {
+      bodySizeLimit: "8mb",
+    },
   },
 };
 
