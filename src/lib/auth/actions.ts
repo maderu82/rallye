@@ -11,7 +11,17 @@ export async function login(formData: FormData): Promise<{ error?: string }> {
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: "Onjuiste inloggegevens. Probeer opnieuw." };
+  if (error) {
+    const code = error.code ?? "";
+    const msg = error.message?.toLowerCase() ?? "";
+    if (code === "email_not_confirmed" || msg.includes("not confirmed")) {
+      return {
+        error:
+          "Je e-mailadres is nog niet bevestigd. Zet in Supabase (Authentication → Providers → Email) 'Confirm email' uit, of bevestig de gebruiker handmatig — zie README.",
+      };
+    }
+    return { error: "Onjuiste inloggegevens (of onbevestigd account). Probeer opnieuw." };
+  }
 
   revalidatePath("/ontwerp", "layout");
   redirect(next.startsWith("/ontwerp") ? next : "/ontwerp");
@@ -31,7 +41,10 @@ export async function signup(formData: FormData): Promise<{ error?: string; mess
     revalidatePath("/ontwerp", "layout");
     redirect("/ontwerp");
   }
-  return { message: "Account aangemaakt. Bevestig je e-mail en log daarna in." };
+  return {
+    message:
+      "Account aangemaakt — bevestig je e-mail en log daarna in. Komt er geen mail? Zet dan 'Confirm email' uit in Supabase (Authentication → Providers → Email).",
+  };
 }
 
 export async function logout() {
