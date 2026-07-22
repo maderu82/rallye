@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: theme("colors.paper");
+  color: theme("colors.ink");
+  min-height: 100dvh;
+  padding-bottom: 52px;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-soft px-4 py-3 font-bold transition active:scale-[.97];
+  }
+  .btn-primary {
+    @apply bg-teal text-white hover:shadow-[0_4px_14px_rgba(29,158,117,.35)];
+  }
+  .btn-coral {
+    @apply bg-coral text-white;
+  }
+  .btn-ghost {
+    @apply bg-teal-light text-teal-dark;
+  }
+  .btn-purple {
+    @apply bg-purple text-white;
+  }
+  .btn-danger {
+    @apply bg-coral-light text-coral font-bold;
+  }
+  .btn-demo {
+    @apply w-full rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF4D6] px-3 py-3 font-bold text-[#7A5D00];
+  }
+  .card {
+    @apply rounded-card bg-white p-4 shadow-soft;
+  }
+  .chip {
+    @apply inline-block rounded-full border-[1.5px] border-purple px-2.5 py-1 text-xs font-bold text-purple;
+  }
+  .chip-teal {
+    @apply border-teal text-teal-dark;
+  }
+  .field-label {
+    @apply mb-1.5 block text-xs font-bold uppercase tracking-wide text-polder-grey;
+  }
+  .input {
+    @apply w-full rounded-soft border-[1.5px] border-polder-line bg-white px-3 py-2.5 text-[15px] text-ink outline-none focus:ring-[3px] focus:ring-teal/40;
+  }
+  .feedback-ok {
+    @apply rounded-soft bg-teal-light p-3 text-sm font-bold text-teal-dark;
+  }
+  .feedback-err {
+    @apply rounded-soft bg-coral-light p-3 text-sm font-bold text-coral;
+  }
+  .hint-box {
+    @apply mt-2.5 rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-sm text-[#6B5200];
+  }
+}
+
+/* ── phone frame ─────────────────────────────────────────────────────────── */
+.phone {
+  width: 390px;
+  max-width: 100%;
+  background: theme("colors.teal.dark");
+  border-radius: 38px;
+  padding: 12px;
+  box-shadow: 0 18px 50px rgba(8, 80, 65, 0.35);
+}
+.phone-screen {
+  background: theme("colors.paper");
+  border-radius: 28px;
+  overflow: hidden;
+  height: 740px;
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── progress bar ────────────────────────────────────────────────────────── */
+.progress {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.progress span {
+  flex: 1;
+  height: 6px;
+  border-radius: 4px;
+  background: theme("colors.polder.line");
+}
+.progress span.done {
+  background: theme("colors.teal.DEFAULT");
+}
+.progress span.cur {
+  background: theme("colors.coral.DEFAULT");
+}
+
+/* ── compass ─────────────────────────────────────────────────────────────── */
+.compass {
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%, #fff, theme("colors.teal.light"));
+  border: 6px solid theme("colors.teal.dark");
+  position: relative;
+  box-shadow: inset 0 0 18px rgba(8, 80, 65, 0.15);
+}
+.compass .pt {
+  position: absolute;
+  font-size: 12px;
+  font-weight: 700;
+  color: theme("colors.teal.dark");
+}
+.needle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 120px;
+  margin: -60px 0 0 -4px;
+  transition: transform 0.8s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.needle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-bottom: 52px solid theme("colors.coral.DEFAULT");
+}
+.needle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top: 52px solid theme("colors.teal.dark");
+}
+
+/* ── toast ───────────────────────────────────────────────────────────────── */
+.toast {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: theme("colors.teal.dark");
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 24px;
+  font-weight: 700;
+  font-size: 14px;
+  z-index: 40;
+  box-shadow: theme("boxShadow.card");
+  animation: pop 0.3s ease;
+}
+@keyframes pop {
+  from {
+    transform: translateX(-50%) scale(0.7);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
