@@ -1,9 +1,11 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { TEAM_COOKIE } from "@/lib/play/constants";
 import type { BlockType, HintMode, NavMode } from "@/lib/blocks";
 
 // ============================================================================
@@ -51,14 +53,19 @@ export async function createRally(formData: FormData) {
     .single();
   if (error || !rally) throw new Error(error?.message ?? "Kon rally niet aanmaken");
 
-  // Seed a start, a finish and the connecting leg.
-  await db.from("points").insert([
-    { rally_id: rally.id, position: 0, kind: "start", name: "Start", has_task: false, gps_unlock: false, map_x: 70, map_y: 350 },
-    { rally_id: rally.id, position: 1, kind: "finish", name: "Finish", has_task: false, gps_unlock: false, map_x: 480, map_y: 300 },
-  ]);
-  await db.from("legs").insert({ rally_id: rally.id, position: 0, nav_mode: "routebook" });
-
+  // Start empty: the organizer places points on the map. The first point
+  // placed becomes the start, the last the finish (kinds are derived from order).
   redirect(`/ontwerp/${rally.id}`);
+}
+
+/** Point kinds are derived from order: first = start, last = finish, rest = waypoint. */
+async function recomputeKinds(db: DB, rallyId: string) {
+  const { data: pts } = await db.from("points").select("id").eq("rally_id", rallyId).order("position");
+  const n = pts?.length ?? 0;
+  for (let i = 0; i < n; i++) {
+    const kind = i === 0 ? "start" : i === n - 1 ? "finish" : "waypoint";
+    await db.from("points").update({ kind }).eq("id", pts![i].id);
+  }
 }
 
 export async function renameRally(rallyId: string, name: string) {
@@ -82,45 +89,90 @@ export async function deleteRally(rallyId: string) {
   redirect("/ontwerp");
 }
 
+/** Start a test play session (organizer only) — opens the player app in test
+ * mode, where the "simulate location reached" helper is available. */
+export async function startTestPlay(rallyId: string) {
+  const db = await createClient();
+  const user = await requireUser(db);
+  const { data: rally } = await db.from("rallies").select("id,owner_id").eq("id", rallyId).maybeSingle();
+  if (!rally || rally.owner_id !== user.id) throw new Error("Geen toegang.");
+
+  const admin = createAdminClient();
+  const { data: team } = await admin
+    .from("teams")
+    .insert({ rally_id: rallyId, name: "🧪 Test" })
+    .select("session_token")
+    .single();
+  if (!team) throw new Error("Kon testsessie niet starten.");
+
+  (await cookies()).set(TEAM_COOKIE, team.session_token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 7,
+    path: "/",
+  });
+  redirect("/speel/rally?test=1");
+}
+
 // ── points ───────────────────────────────────────────────────────────────────
 export async function addPoint(rallyId: string, lat: number, lng: number) {
   const db = await createClient();
   await requireUser(db);
 
-  const { data: points } = await db
-    .from("points")
-    .select("id,position,kind")
-    .eq("rally_id", rallyId)
-    .order("position");
-  if (!points?.length) return;
+  const { data: points } = await db.from("points").select("id").eq("rally_id", rallyId).order("position");
+  const p = points?.length ?? 0;
 
-  const finish = points[points.length - 1];
-  const waypoints = points.slice(0, -1); // start + existing waypoints
+  // Append at the end; the newest point becomes the finish, the first stays the
+  // start (kinds recomputed below). This matches placing points in walking order.
+  await db.from("points").insert({
+    rally_id: rallyId,
+    position: p,
+    kind: p === 0 ? "start" : "finish",
+    name: p === 0 ? "Start" : `Punt ${p}`,
+    has_task: false,
+    gps_unlock: p !== 0,
+    lat,
+    lng,
+  });
+  if (p >= 1) {
+    await db.from("legs").insert({ rally_id: rallyId, position: p - 1, nav_mode: "routebook" });
+  }
+  await recomputeKinds(db, rallyId);
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
 
-  // Insert new waypoint + a new leg at temporary high positions, then resequence.
-  const { data: np } = await db
-    .from("points")
-    .insert({
-      rally_id: rallyId,
-      position: 99990,
-      kind: "waypoint",
-      name: `Nieuw punt ${waypoints.length}`,
-      has_task: false,
-      gps_unlock: true,
-      lat,
-      lng,
-    })
-    .select("id")
-    .single();
-  await db.from("legs").insert({ rally_id: rallyId, position: 99991, nav_mode: "routebook" });
+/** Replace the whole route with points parsed from a GPX file (append legs). */
+export async function importGpx(rallyId: string, coords: { name: string; lat: number; lng: number }[]) {
+  const db = await createClient();
+  await requireUser(db);
+  const { data: rally } = await db.from("rallies").select("id").eq("id", rallyId).maybeSingle();
+  if (!rally) throw new Error("Geen toegang.");
+  if (!coords.length) return;
 
-  const { data: legs } = await db.from("legs").select("id,position").eq("rally_id", rallyId).order("position");
+  // wipe existing route (assignments cascade via point fk)
+  await db.from("legs").delete().eq("rally_id", rallyId);
+  await db.from("points").delete().eq("rally_id", rallyId);
 
-  // Desired point order: start … waypoints, NEW, finish
-  const orderedPoints = [...waypoints.map((p) => p.id), np!.id, finish.id];
-  await resequence(db, "points", orderedPoints);
-  await resequence(db, "legs", (legs ?? []).map((l) => l.id));
+  const rows = coords.slice(0, 200).map((c, i) => ({
+    rally_id: rallyId,
+    position: i,
+    kind: i === 0 ? "start" : i === coords.length - 1 ? "finish" : "waypoint",
+    name: c.name || (i === 0 ? "Start" : `Punt ${i}`),
+    has_task: false,
+    gps_unlock: i !== 0,
+    lat: c.lat,
+    lng: c.lng,
+  }));
+  await db.from("points").insert(rows);
 
+  const legRows = [];
+  for (let i = 0; i < rows.length - 1; i++) {
+    legRows.push({ rally_id: rallyId, position: i, nav_mode: "routebook" as const });
+  }
+  if (legRows.length) await db.from("legs").insert(legRows);
+
+  await recomputeKinds(db, rallyId);
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
@@ -157,9 +209,6 @@ export async function deletePoint(rallyId: string, pointId: string) {
   const db = await createClient();
   await requireUser(db);
 
-  const { data: point } = await db.from("points").select("position,kind").eq("id", pointId).single();
-  if (!point || point.kind !== "waypoint") return;
-
   await db.from("points").delete().eq("id", pointId);
 
   // Drop the highest-position leg to keep legs = points − 1, then resequence.
@@ -171,6 +220,7 @@ export async function deletePoint(rallyId: string, pointId: string) {
   const { data: legs2 } = await db.from("legs").select("id").eq("rally_id", rallyId).order("position");
   await resequence(db, "points", (points ?? []).map((p) => p.id));
   await resequence(db, "legs", (legs2 ?? []).map((l) => l.id));
+  await recomputeKinds(db, rallyId);
 
   revalidatePath(`/ontwerp/${rallyId}`);
 }
@@ -179,17 +229,16 @@ export async function reorderPoint(rallyId: string, pointId: string, dir: -1 | 1
   const db = await createClient();
   await requireUser(db);
 
-  const { data: points } = await db.from("points").select("id,position,kind").eq("rally_id", rallyId).order("position");
+  const { data: points } = await db.from("points").select("id,position").eq("rally_id", rallyId).order("position");
   if (!points) return;
   const i = points.findIndex((p) => p.id === pointId);
   const j = i + dir;
-  // start (0) and finish (last) are fixed
-  if (i <= 0 || i >= points.length - 1) return;
-  if (j <= 0 || j >= points.length - 1) return;
+  if (i < 0 || j < 0 || j >= points.length) return;
 
   const order = points.map((p) => p.id);
   [order[i], order[j]] = [order[j], order[i]];
   await resequence(db, "points", order);
+  await recomputeKinds(db, rallyId);
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 

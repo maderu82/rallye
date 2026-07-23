@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE } from "@/lib/blocks";
@@ -38,9 +38,11 @@ type Toast = { id: number; msg: string };
 export default function PlayClient({
   state,
   leaderboard,
+  testMode = false,
 }: {
   state: PlayState;
   leaderboard: LeaderboardRow[];
+  testMode?: boolean;
 }) {
   const waypoints = useMemo(
     () => state.points.filter((p) => p.kind === "waypoint").sort((a, b) => a.position - b.position),
@@ -156,86 +158,83 @@ export default function PlayClient({
     : `Waypoint ${step + 1} van ${waypoints.length}`;
 
   return (
-    <main className="flex justify-center px-3 py-6">
-      <div className="phone">
-        <div className="phone-screen">
-          <div className="flex justify-between bg-teal-dark px-4 py-1.5 text-[11px] text-[#DFF3EA]">
-            <span>09:41</span>
-            <span>{state.rally.name}</span>
-            <span>📶 🔋</span>
-          </div>
-          <div className="flex items-center gap-2.5 bg-teal px-3.5 py-2.5 text-white">
-            <a href="/" className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/20 text-base" title="Startscherm">
-              ⌂
-            </a>
-            <div className="flex-1 truncate text-[15px] font-bold">{title}</div>
-            <button
-              onClick={() => setLbOpen(true)}
-              className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/20 text-base"
-              title="Klassement"
-            >
-              🏆
+    <main className="mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col">
+      {testMode ? (
+        <div className="bg-[#FFF4D6] px-4 py-1.5 text-center text-xs font-bold text-[#7A5D00]">
+          🧪 Testmodus — hulpknoppen zoals “locatie simuleren” zijn zichtbaar. Deelnemers zien deze niet.
+        </div>
+      ) : null}
+      <header className="sticky top-0 z-30 flex items-center gap-2.5 bg-teal px-4 py-3 text-white shadow-soft">
+        <a href="/" className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/20 text-base" title="Startscherm">
+          ⌂
+        </a>
+        <div className="flex-1 truncate text-[15px] font-bold">{title}</div>
+        <button
+          onClick={() => setLbOpen(true)}
+          className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/20 text-base"
+          title="Klassement"
+        >
+          🏆
+        </button>
+        <div className="rounded-full bg-teal-dark px-3 py-1.5 text-sm font-bold">
+          <span>{score}</span> ptn
+        </div>
+      </header>
+
+      <div className="flex-1 p-4 pb-24">
+        {atFinish ? (
+          <FinishView
+            teamName={state.team.name}
+            score={score}
+            hintsUsed={state.events.filter((e) => e.is_hint).length}
+            badges={badges}
+            board={liveBoard}
+          />
+        ) : (
+          <WaypointView
+            key={waypoints[step].id}
+            point={waypoints[step]}
+            leg={legByPosition.get(waypoints[step].position - 1)}
+            assignment={assignmentByPoint.get(waypoints[step].id)}
+            stepIndex={step}
+            total={waypoints.length}
+            completed={completed}
+            testMode={testMode}
+            onScored={onScored}
+            toast={toast}
+            onComplete={(aid) => aid && setCompleted((s) => new Set(s).add(aid))}
+            onNext={() => setStep((s) => s + 1)}
+            isLast={step === waypoints.length - 1}
+            finishName={finishPoint?.name ?? "de finish"}
+            answeredEnroute={answeredEnroute}
+            onEnrouteAnswered={(legId) => setAnsweredEnroute((s) => new Set(s).add(legId))}
+          />
+        )}
+      </div>
+
+      {lbOpen ? (
+        <div
+          className="fixed inset-0 z-40 flex items-end bg-teal-dark/45"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLbOpen(false);
+          }}
+        >
+          <div className="mx-auto max-h-[78%] w-full max-w-[520px] overflow-y-auto rounded-t-3xl bg-paper p-4">
+            <h3 className="mb-3 text-lg font-bold text-teal-dark">🏆 Live klassement</h3>
+            <LeaderboardList board={liveBoard} />
+            <button className="btn btn-ghost w-full" onClick={() => setLbOpen(false)}>
+              Sluiten
             </button>
-            <div className="rounded-full bg-teal-dark px-3 py-1.5 text-sm font-bold">
-              <span>{score}</span> ptn
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4">
-            {atFinish ? (
-              <FinishView
-                teamName={state.team.name}
-                score={score}
-                hintsUsed={state.events.filter((e) => e.is_hint).length}
-                badges={badges}
-                board={liveBoard}
-              />
-            ) : (
-              <WaypointView
-                key={waypoints[step].id}
-                point={waypoints[step]}
-                leg={legByPosition.get(waypoints[step].position - 1)}
-                assignment={assignmentByPoint.get(waypoints[step].id)}
-                stepIndex={step}
-                total={waypoints.length}
-                completed={completed}
-                onScored={onScored}
-                toast={toast}
-                onComplete={(aid) => aid && setCompleted((s) => new Set(s).add(aid))}
-                onNext={() => setStep((s) => s + 1)}
-                isLast={step === waypoints.length - 1}
-                finishName={finishPoint?.name ?? "de finish"}
-                answeredEnroute={answeredEnroute}
-                onEnrouteAnswered={(legId) => setAnsweredEnroute((s) => new Set(s).add(legId))}
-              />
-            )}
-          </div>
-
-          {lbOpen ? (
-            <div
-              className="absolute inset-0 z-20 flex items-end bg-teal-dark/45"
-              onClick={(e) => {
-                if (e.target === e.currentTarget) setLbOpen(false);
-              }}
-            >
-              <div className="max-h-[78%] w-full overflow-y-auto rounded-t-3xl bg-paper p-4">
-                <h3 className="mb-3 text-lg font-bold text-teal-dark">🏆 Live klassement</h3>
-                <LeaderboardList board={liveBoard} />
-                <button className="btn btn-ghost w-full" onClick={() => setLbOpen(false)}>
-                  Sluiten
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          <div>
-            {toasts.map((t) => (
-              <div key={t.id} className="toast">
-                {t.msg}
-              </div>
-            ))}
           </div>
         </div>
+      ) : null}
+
+      <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex flex-col items-center gap-2">
+        {toasts.map((t) => (
+          <div key={t.id} className="toast" style={{ position: "static", transform: "none" }}>
+            {t.msg}
+          </div>
+        ))}
       </div>
     </main>
   );
@@ -249,6 +248,7 @@ function WaypointView(props: {
   stepIndex: number;
   total: number;
   completed: Set<string>;
+  testMode: boolean;
   onScored: (score: number, badge?: { name: string; icon: string }) => void;
   toast: (m: string) => void;
   onComplete: (assignmentId?: string) => void;
@@ -258,7 +258,7 @@ function WaypointView(props: {
   answeredEnroute: Set<string>;
   onEnrouteAnswered: (legId: string) => void;
 }) {
-  const { point, leg, assignment, stepIndex, total, completed, onScored, toast, onComplete, onNext, isLast, answeredEnroute, onEnrouteAnswered } = props;
+  const { point, leg, assignment, stepIndex, total, completed, testMode, onScored, toast, onComplete, onNext, isLast, answeredEnroute, onEnrouteAnswered } = props;
   const [unlocked, setUnlocked] = useState(!point.gps_unlock);
   const done = assignment ? completed.has(assignment.id) : true;
 
@@ -282,7 +282,7 @@ function WaypointView(props: {
       ) : null}
 
       {!unlocked && point.gps_unlock ? (
-        <GpsUnlock point={point} onUnlock={() => setUnlocked(true)} toast={toast} />
+        <GpsUnlock point={point} testMode={testMode} onUnlock={() => setUnlocked(true)} toast={toast} />
       ) : null}
 
       {assignment ? (
@@ -372,10 +372,17 @@ function LegNav({
   );
 }
 
-// ── live compass: bearing + distance from the team's live position ───────────
+// ── live compass: bearing + distance from the team's live position, needle
+//    that follows the phone's heading (turn until the arrow points up) ─────────
+type OrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
+type DOEWithPerm = { requestPermission?: () => Promise<"granted" | "denied"> };
+
 function LiveCompass({ target }: { target: Point }) {
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
   const [err, setErr] = useState(false);
+  const [heading, setHeading] = useState<number | null>(null);
+  const [needPerm, setNeedPerm] = useState(false);
+  const offRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!("geolocation" in navigator)) {
@@ -390,15 +397,59 @@ function LiveCompass({ target }: { target: Point }) {
     return () => navigator.geolocation.clearWatch(id);
   }, []);
 
+  function attachOrientation() {
+    const handler = (e: Event) => {
+      const oe = e as OrientationEvent;
+      let h: number | null = null;
+      if (typeof oe.webkitCompassHeading === "number") h = oe.webkitCompassHeading;
+      else if (typeof oe.alpha === "number") h = (360 - oe.alpha) % 360;
+      if (h != null && !Number.isNaN(h)) setHeading(h);
+    };
+    window.addEventListener("deviceorientationabsolute", handler, true);
+    window.addEventListener("deviceorientation", handler, true);
+    offRef.current = () => {
+      window.removeEventListener("deviceorientationabsolute", handler, true);
+      window.removeEventListener("deviceorientation", handler, true);
+    };
+  }
+
+  useEffect(() => {
+    const DOE = (window.DeviceOrientationEvent as unknown as DOEWithPerm) ?? null;
+    if (DOE && typeof DOE.requestPermission === "function") {
+      setNeedPerm(true); // iOS: needs a tap to grant
+    } else if (typeof window !== "undefined" && "DeviceOrientationEvent" in window) {
+      attachOrientation();
+    }
+    return () => offRef.current?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function enableCompass() {
+    const DOE = window.DeviceOrientationEvent as unknown as DOEWithPerm;
+    try {
+      const res = await DOE.requestPermission?.();
+      if (res === "granted") {
+        setNeedPerm(false);
+        attachOrientation();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   const hasTarget = target.lat != null && target.lng != null;
   const bearing =
     pos && hasTarget ? (bearingTo(pos, { lat: target.lat!, lng: target.lng! }) + 360) % 360 : null;
   const distance =
     pos && hasTarget ? Math.round(haversine(pos, { lat: target.lat!, lng: target.lng! })) : null;
 
+  // rotate the dial so N points to real north; the needle sits at the target's
+  // absolute bearing → on screen the needle points the real-world direction.
+  const dialRot = heading != null ? -heading : 0;
+
   return (
     <div className="flex flex-col items-center py-1.5">
-      <div className="compass">
+      <div className="compass" style={{ transform: `rotate(${dialRot}deg)`, transition: "transform .3s ease" }}>
         <span className="pt" style={{ top: 8, left: "50%", transform: "translateX(-50%)" }}>N</span>
         <span className="pt" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)" }}>Z</span>
         <span className="pt" style={{ left: 10, top: "50%", transform: "translateY(-50%)" }}>W</span>
@@ -413,13 +464,21 @@ function LiveCompass({ target }: { target: Point }) {
           <b className="block text-[22px] text-coral">{distance != null ? (distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`) : "—"}</b>afstand
         </div>
       </div>
-      <p className="mt-2 text-center text-xs text-polder-grey">
-        {err
-          ? "Zet gps aan om koers en afstand te zien."
-          : pos
-            ? "Live berekend vanaf jullie locatie 📍"
-            : "📡 Locatie bepalen…"}
-      </p>
+      {needPerm ? (
+        <button className="btn btn-ghost mt-2 text-sm" onClick={enableCompass}>
+          🧭 Kompas activeren
+        </button>
+      ) : (
+        <p className="mt-2 text-center text-xs text-polder-grey">
+          {err
+            ? "Zet gps aan om koers en afstand te zien."
+            : heading != null
+              ? "Draai tot de rode pijl omhoog wijst en loop die kant op 🧭"
+              : pos
+                ? "Live berekend vanaf jullie locatie 📍"
+                : "📡 Locatie bepalen…"}
+        </p>
+      )}
     </div>
   );
 }
@@ -501,7 +560,7 @@ function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function GpsUnlock({ point, onUnlock, toast }: { point: Point; onUnlock: () => void; toast: (m: string) => void }) {
+function GpsUnlock({ point, testMode, onUnlock, toast }: { point: Point; testMode: boolean; onUnlock: () => void; toast: (m: string) => void }) {
   const [checking, setChecking] = useState(false);
   const [dist, setDist] = useState<number | null>(null);
   const THRESHOLD = 120; // metres
@@ -548,9 +607,11 @@ function GpsUnlock({ point, onUnlock, toast }: { point: Point; onUnlock: () => v
       {dist === -1 ? (
         <p className="mt-2 text-center text-[13px] text-polder-grey">Geen gps beschikbaar.</p>
       ) : null}
-      <button className="btn-demo mt-2" onClick={onUnlock}>
-        📍 Simuleer: locatie bereikt
-      </button>
+      {testMode ? (
+        <button className="btn-demo mt-2" onClick={onUnlock}>
+          🧪 Test: locatie bereikt
+        </button>
+      ) : null}
     </div>
   );
 }

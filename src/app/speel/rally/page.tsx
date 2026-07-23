@@ -6,7 +6,11 @@ import PlayClient from "./PlayClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function RallyPlayPage() {
+export default async function RallyPlayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ test?: string }>;
+}) {
   const token = (await cookies()).get(TEAM_COOKIE)?.value;
   if (!token) redirect("/speel");
 
@@ -14,6 +18,7 @@ export default async function RallyPlayPage() {
   if (!state) redirect("/speel");
 
   const leaderboard = await getLeaderboard(state.rally.id, state.team.id);
+  const testMode = (await searchParams).test === "1";
 
-  return <PlayClient state={state} leaderboard={leaderboard} />;
+  return <PlayClient state={state} leaderboard={leaderboard} testMode={testMode} />;
 }

@@ -18,14 +18,45 @@ import {
   addPoint,
   deletePoint,
   deleteRally,
+  importGpx,
   renameRally,
   reorderPoint,
+  startTestPlay,
   togglePublish,
   updateAssignment,
   updateLeg,
   updatePoint,
 } from "@/lib/designer/actions";
 import { logout } from "@/lib/auth/actions";
+
+// Parse a GPX file into ordered {name,lat,lng} points (waypoints/route/track).
+function parseGpx(xml: string): { name: string; lat: number; lng: number }[] {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const pick = (tag: string) => Array.from(doc.getElementsByTagName(tag));
+  let nodes = pick("wpt");
+  if (!nodes.length) nodes = pick("rtept");
+  let usedTrack = false;
+  if (!nodes.length) {
+    nodes = pick("trkpt");
+    usedTrack = true;
+  }
+  let list = nodes
+    .map((n) => ({
+      name: n.getElementsByTagName("name")[0]?.textContent?.trim() || "",
+      lat: Number(n.getAttribute("lat")),
+      lng: Number(n.getAttribute("lon")),
+    }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  // A raw track can have thousands of points — downsample to a usable route.
+  if (usedTrack && list.length > 30) {
+    const step = Math.ceil(list.length / 30);
+    const sampled = list.filter((_, i) => i % step === 0);
+    const last = list[list.length - 1];
+    if (sampled[sampled.length - 1] !== last) sampled.push(last);
+    list = sampled;
+  }
+  return list;
+}
 
 type LiveTeam = {
   id: string;
@@ -77,6 +108,19 @@ export default function EditorClient({
     run(() => addPoint(rally.id, lat, lng));
   }
 
+  async function handleGpx(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const coords = parseGpx(await file.text());
+    if (!coords.length) {
+      alert("Geen punten gevonden in dit GPX-bestand.");
+      return;
+    }
+    if (!confirm(`${coords.length} punten importeren uit "${file.name}"? Dit vervangt de huidige route.`)) return;
+    run(() => importGpx(rally.id, coords));
+  }
+
   const mapPoints: MapPoint[] = points.map((p) => ({
     id: p.id,
     lat: p.lat,
@@ -112,6 +156,9 @@ export default function EditorClient({
             📡 Teams volgen
           </button>
         </div>
+        <form action={startTestPlay.bind(null, rally.id)}>
+          <button className="btn btn-purple" type="submit" title="Speel de rally zelf om te testen (met hulpknoppen)">▶️ Test als speler</button>
+        </form>
         <button
           className={`btn ${rally.published ? "btn-ghost" : "btn-coral"}`}
           onClick={() => run(() => togglePublish(rally.id, !rally.published))}
@@ -123,6 +170,10 @@ export default function EditorClient({
         </form>
       </div>
 
+      <p className="mb-3 text-xs text-polder-grey">
+        Deel de teamcode <b className="text-teal-dark">{rally.join_code}</b> met je teams (of laat ze de QR scannen). Publiceer de rally zodat teams kunnen meedoen.
+      </p>
+
       {pending ? <p className="mb-2 text-xs text-polder-grey">Bezig met opslaan…</p> : null}
 
       {tab === "build" ? (
@@ -130,12 +181,15 @@ export default function EditorClient({
           {/* list */}
           <div className="card">
             <h3 className="mb-2.5 text-sm font-bold uppercase tracking-wide text-teal-dark">Punten & trajecten</h3>
+            {points.length === 0 ? (
+              <p className="rounded-soft bg-teal-light p-3 text-[13px] text-teal-dark">
+                Nog geen punten. Klik hiernaast op <b>➕ Nieuw punt op de kaart</b> en plaats je <b>startpunt</b>. Het eerste punt is automatisch de start, het laatste de finish.
+              </p>
+            ) : null}
             <div className="space-y-1.5">
               {points.map((p, i) => {
                 const a = assignmentByPoint.get(p.id);
                 const isSF = p.kind !== "waypoint";
-                const wpCount = points.filter((x) => x.kind === "waypoint").length;
-                const wpIndex = points.filter((x) => x.kind === "waypoint").findIndex((x) => x.id === p.id);
                 return (
                   <div key={p.id}>
                     <button
@@ -157,28 +211,26 @@ export default function EditorClient({
                           {p.lat != null ? ` · ${p.lat}, ${p.lng}` : ""}
                         </small>
                       </span>
-                      {!isSF ? (
-                        <span className="ml-auto flex flex-col gap-0.5">
-                          <span
-                            className={`flex h-4 w-5 items-center justify-center rounded bg-teal-light text-[10px] font-bold text-teal-dark ${wpIndex <= 0 ? "opacity-25" : "hover:bg-teal hover:text-white"}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (wpIndex > 0) run(() => reorderPoint(rally.id, p.id, -1));
-                            }}
-                          >
-                            ▲
-                          </span>
-                          <span
-                            className={`flex h-4 w-5 items-center justify-center rounded bg-teal-light text-[10px] font-bold text-teal-dark ${wpIndex >= wpCount - 1 ? "opacity-25" : "hover:bg-teal hover:text-white"}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (wpIndex < wpCount - 1) run(() => reorderPoint(rally.id, p.id, 1));
-                            }}
-                          >
-                            ▼
-                          </span>
+                      <span className="ml-auto flex flex-col gap-0.5">
+                        <span
+                          className={`flex h-4 w-5 items-center justify-center rounded bg-teal-light text-[10px] font-bold text-teal-dark ${i <= 0 ? "opacity-25" : "hover:bg-teal hover:text-white"}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (i > 0) run(() => reorderPoint(rally.id, p.id, -1));
+                          }}
+                        >
+                          ▲
                         </span>
-                      ) : null}
+                        <span
+                          className={`flex h-4 w-5 items-center justify-center rounded bg-teal-light text-[10px] font-bold text-teal-dark ${i >= points.length - 1 ? "opacity-25" : "hover:bg-teal hover:text-white"}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (i < points.length - 1) run(() => reorderPoint(rally.id, p.id, 1));
+                          }}
+                        >
+                          ▼
+                        </span>
+                      </span>
                     </button>
                     {i < legs.length ? (
                       <button
@@ -208,6 +260,10 @@ export default function EditorClient({
               <button className="btn btn-coral text-sm" onClick={() => setAddMode((v) => !v)}>
                 {addMode ? "✖ Annuleer plaatsen" : "➕ Nieuw punt op de kaart"}
               </button>
+              <label className="btn btn-ghost cursor-pointer text-sm" title="Importeer een route uit een GPX-bestand (bijv. uit MRA/komoot)">
+                ⬆️ Importeer GPX
+                <input type="file" accept=".gpx,application/gpx+xml,text/xml" className="hidden" onChange={handleGpx} />
+              </label>
               {addMode ? <span className="chip chip-teal">Klik op de kaart om het punt te plaatsen (gps wordt automatisch ingevuld)</span> : null}
             </div>
             <RallyMap
@@ -286,7 +342,11 @@ function PointSettings({
       </div>
 
       {isSF ? (
-        <p className="text-[13px] text-polder-grey">Start en finish hebben geen opdracht en kunnen niet worden verwijderd of verplaatst in de volgorde.</p>
+        <p className="rounded-soft bg-teal-light p-2.5 text-[13px] text-teal-dark">
+          {point.kind === "start"
+            ? "🚩 Dit is het startpunt (het eerste punt). Teams melden zich hier aan. Sleep punten of gebruik ▲/▼ om de volgorde te wijzigen."
+            : "🏁 Dit is de finish (het laatste punt). Hier eindigt de rally. Sleep punten of gebruik ▲/▼ om de volgorde te wijzigen."}
+        </p>
       ) : (
         <>
           <label className="flex items-center gap-2.5 text-sm font-semibold">
@@ -343,12 +403,12 @@ function PointSettings({
           ) : (
             <p className="text-[13px] text-polder-grey">Dit punt is alleen een navigatiepunt — teams komen langs zonder opdracht.</p>
           )}
-
-          <button className="btn btn-danger w-full text-sm" onClick={onDelete}>
-            🗑️ Verwijder punt
-          </button>
         </>
       )}
+
+      <button className="btn btn-danger w-full text-sm" onClick={onDelete}>
+        🗑️ Verwijder punt
+      </button>
     </div>
   );
 }
