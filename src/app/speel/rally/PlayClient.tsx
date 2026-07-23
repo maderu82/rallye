@@ -95,6 +95,27 @@ export default function PlayClient({
 
   const rallyId = state.rally.id;
   const teamId = state.team.id;
+  const [geoDenied, setGeoDenied] = useState(false);
+
+  // Ask for location up front so the browser prompt appears at the start of the
+  // rally (GPS is needed for unlocking assignments and for the compass).
+  function requestLocation() {
+    if (!("geolocation" in navigator)) {
+      setGeoDenied(true);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      () => setGeoDenied(false),
+      (err) => {
+        if (err.code === err.PERMISSION_DENIED) setGeoDenied(true);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+  useEffect(() => {
+    requestLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Live leaderboard via Supabase Realtime: subscribe to team_scores changes for
   // this rally and refetch on any update (other teams scoring, finishing, …).
@@ -186,6 +207,13 @@ export default function PlayClient({
       </header>
 
       <div className="flex-1 p-4 pb-24">
+        {geoDenied ? (
+          <div className="mb-3 rounded-card bg-coral-light p-3 text-sm text-coral">
+            📍 <b>Locatie staat uit.</b> Deze rally gebruikt je gps voor het ontgrendelen van opdrachten en het kompas.
+            Zet locatietoegang aan in je browser en tik dan op &ldquo;opnieuw&rdquo;.
+            <button className="btn btn-coral mt-2 w-full text-sm" onClick={requestLocation}>📍 Locatie opnieuw toestaan</button>
+          </div>
+        ) : null}
         {atFinish ? (
           <FinishView
             teamName={state.team.name}
