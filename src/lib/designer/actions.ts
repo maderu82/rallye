@@ -262,6 +262,7 @@ export async function updateLeg(
     note: string;
     enroute_enabled: boolean;
     enroute_question: string;
+    enroute_answer: string;
     enroute_points: number;
   }>,
 ) {

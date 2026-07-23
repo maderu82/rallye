@@ -61,7 +61,8 @@ export async function getPlayState(token: string): Promise<PlayState | null> {
     team: team as Team,
     rally: rally as PlayState["rally"],
     points: (points ?? []) as Point[],
-    legs: (legs ?? []) as Leg[],
+    // strip the en-route answer key — never send it to the browser
+    legs: ((legs ?? []) as Leg[]).map((l) => ({ ...l, enroute_answer: null })),
     assignments: stripSolution((assignments ?? []) as PublicAssignment[]),
     events: evts,
     badges: (badges ?? []) as TeamBadge[],

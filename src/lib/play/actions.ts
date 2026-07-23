@@ -305,6 +305,62 @@ export async function buyDigit(assignmentId: string): Promise<ActionResult & { r
   return { ok: true, complete: false, feedback: `🔢 Cijfer ${already + 1} gekocht.`, score: await scoreOf(db, team.id), revealed };
 }
 
+// ── en-route question ─────────────────────────────────────────────────────────
+// enroute_points > 0 → AUTO-graded against the stored answer.
+// enroute_points = 0 → "get to know each other" question: no right/wrong.
+export async function answerEnroute(
+  legId: string,
+  text: string,
+): Promise<ActionResult> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, complete: false, feedback: "", score: 0, error: "Geen actief team." };
+  const { team, db } = ctx;
+
+  const { data: leg } = await db.from("legs").select("*").eq("id", legId).maybeSingle();
+  if (!leg || leg.rally_id !== team.rally_id || !leg.enroute_enabled) {
+    return { ok: false, complete: false, feedback: "", score: await scoreOf(db, team.id), error: "Vraag niet gevonden." };
+  }
+
+  // already answered?
+  const { data: prev } = await db
+    .from("team_events")
+    .select("id,detail")
+    .eq("team_id", team.id)
+    .eq("kind", "enroute");
+  if ((prev ?? []).some((e) => (e.detail as { leg_id?: string; complete?: boolean })?.leg_id === legId && (e.detail as { complete?: boolean })?.complete)) {
+    return { ok: true, complete: true, feedback: "Al beantwoord.", score: await scoreOf(db, team.id) };
+  }
+
+  const pts = Number(leg.enroute_points ?? 0);
+  const norm = (s: unknown) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+  // social question (0 points): always accepted, no grading
+  if (pts <= 0) {
+    await db.from("team_events").insert({
+      team_id: team.id,
+      rally_id: team.rally_id,
+      kind: "enroute",
+      points_delta: 0,
+      detail: { leg_id: legId, complete: true, social: true, answer: text },
+    });
+    return { ok: true, complete: true, feedback: "💚 Leuk — bedankt voor het delen!", score: await scoreOf(db, team.id) };
+  }
+
+  // graded question
+  const correct = norm(text) === norm(leg.enroute_answer);
+  if (!correct) {
+    return { ok: false, complete: false, feedback: "❌ Dat is niet het juiste antwoord. Probeer opnieuw!", score: await scoreOf(db, team.id) };
+  }
+  await db.from("team_events").insert({
+    team_id: team.id,
+    rally_id: team.rally_id,
+    kind: "enroute",
+    points_delta: pts,
+    detail: { leg_id: legId, complete: true },
+  });
+  return { ok: true, complete: true, feedback: `✅ Goed! +${pts} punten.`, score: await scoreOf(db, team.id) };
+}
+
 // ── finish ────────────────────────────────────────────────────────────────────
 export async function finishRally(): Promise<{ ok: boolean }> {
   const ctx = await currentTeam();

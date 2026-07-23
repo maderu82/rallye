@@ -380,15 +380,8 @@ function LegSettings({
       </div>
 
       {leg.nav_mode === "compass" ? (
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="field-label">Koers (°)</label>
-            <input type="number" defaultValue={leg.bearing ?? ""} className="input" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { bearing: e.target.value ? Number(e.target.value) : null }))} />
-          </div>
-          <div>
-            <label className="field-label">Afstand (m)</label>
-            <input type="number" defaultValue={leg.distance ?? ""} className="input" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { distance: e.target.value ? Number(e.target.value) : null }))} />
-          </div>
+        <div className="rounded-soft bg-teal-light p-3 text-[13px] text-teal-dark">
+          🧭 De koers en afstand worden in de app <b>live berekend</b> vanaf de locatie van het team naar dit bestemmingspunt — je hoeft ze niet in te vullen. Zorg alleen dat het bestemmingspunt een goede gps-locatie heeft.
         </div>
       ) : null}
 
@@ -418,8 +411,19 @@ function LegSettings({
           </div>
           <div>
             <label className="field-label">Punten</label>
-            <input type="number" defaultValue={leg.enroute_points} className="input" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { enroute_points: Number(e.target.value) }))} />
+            <input type="number" min={0} defaultValue={leg.enroute_points} className="input" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { enroute_points: Number(e.target.value) }))} />
           </div>
+          {leg.enroute_points > 0 ? (
+            <div>
+              <label className="field-label">Juist antwoord (nodig om te controleren)</label>
+              <input defaultValue={leg.enroute_answer ?? ""} className="input" placeholder="bijv. 4" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { enroute_answer: e.target.value }))} />
+              <p className="mt-1 text-xs text-polder-grey">De app controleert het antwoord automatisch en kent de punten toe.</p>
+            </div>
+          ) : (
+            <p className="rounded-soft bg-purple-light p-2 text-xs font-semibold text-purple">
+              💚 0 punten = kennismakingsvraag. Er is geen goed of fout — teams delen gewoon hun antwoord om elkaar beter te leren kennen.
+            </p>
+          )}
         </div>
       ) : null}
     </div>

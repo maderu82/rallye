@@ -70,10 +70,13 @@ create table if not exists public.legs (
   note             text,
   enroute_enabled  boolean not null default false,
   enroute_question text,
+  enroute_answer   text,
   enroute_points   int not null default 10,
   created_at       timestamptz not null default now(),
   unique (rally_id, position)
 );
+-- add the column to databases created before this field existed
+alter table public.legs add column if not exists enroute_answer text;
 
 -- ─── teams ───────────────────────────────────────────────────────────────────
 create table if not exists public.teams (
@@ -325,9 +328,9 @@ begin
   insert into public.legs (rally_id, position, nav_mode, steps) values
     (v_rally, 0, 'routebook', E'Verlaat het dorpsplein via de Kerkstraat.\nGa bij de bakker rechtsaf.\nVolg het water tot de oude sluis.'),
     (v_rally, 1, 'routebook', E'Steek de sluisbrug over.\nVolg het fietspad langs de vaart.\nNa 400 m staat de molen links.');
-  insert into public.legs (rally_id, position, nav_mode, steps, enroute_enabled, enroute_question, enroute_points)
+  insert into public.legs (rally_id, position, nav_mode, steps, enroute_enabled, enroute_question, enroute_answer, enroute_points)
     values (v_rally, 2, 'turn', E'Na 150 m rechts de dijk op.\nNa 800 m flauwe bocht links aanhouden.\nNa 1,4 km stoppen bij het pontje.',
-            true, 'Hoeveel wieken heeft de molen die je passeert?', 10);
+            true, 'Hoeveel wieken heeft de molen die je passeert?', '4', 10);
   insert into public.legs (rally_id, position, nav_mode, bearing, distance) values
     (v_rally, 3, 'compass', 214, 350), (v_rally, 4, 'compass', 78, 120);
   insert into public.legs (rally_id, position, nav_mode, note) values

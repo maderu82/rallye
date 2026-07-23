@@ -58,6 +58,7 @@ export interface Leg {
   note: string | null;
   enroute_enabled: boolean;
   enroute_question: string | null;
+  enroute_answer: string | null; // server-only; stripped before reaching the browser
   enroute_points: number;
   created_at: string;
 }

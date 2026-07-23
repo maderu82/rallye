@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE } from "@/lib/blocks";
-import { buyDigit, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, useHint } from "@/lib/play/actions";
 import { createClient } from "@/lib/supabase/client";
 
 // Downscale a captured photo client-side to keep uploads small (<~8 MB action
@@ -81,6 +81,14 @@ export default function PlayClient({
   const [lbOpen, setLbOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [remoteBoard, setRemoteBoard] = useState<LeaderboardRow[]>(leaderboard);
+  const [answeredEnroute, setAnsweredEnroute] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    for (const e of state.events) {
+      const d = e.detail as { leg_id?: string; complete?: boolean };
+      if (e.kind === "enroute" && d?.leg_id && d.complete) s.add(d.leg_id);
+    }
+    return s;
+  });
 
   const rallyId = state.rally.id;
   const teamId = state.team.id;
@@ -197,6 +205,8 @@ export default function PlayClient({
                 onNext={() => setStep((s) => s + 1)}
                 isLast={step === waypoints.length - 1}
                 finishName={finishPoint?.name ?? "de finish"}
+                answeredEnroute={answeredEnroute}
+                onEnrouteAnswered={(legId) => setAnsweredEnroute((s) => new Set(s).add(legId))}
               />
             )}
           </div>
@@ -245,8 +255,10 @@ function WaypointView(props: {
   onNext: () => void;
   isLast: boolean;
   finishName: string;
+  answeredEnroute: Set<string>;
+  onEnrouteAnswered: (legId: string) => void;
 }) {
-  const { point, leg, assignment, stepIndex, total, completed, onScored, toast, onComplete, onNext, isLast } = props;
+  const { point, leg, assignment, stepIndex, total, completed, onScored, toast, onComplete, onNext, isLast, answeredEnroute, onEnrouteAnswered } = props;
   const [unlocked, setUnlocked] = useState(!point.gps_unlock);
   const done = assignment ? completed.has(assignment.id) : true;
 
@@ -258,7 +270,16 @@ function WaypointView(props: {
         ))}
       </div>
 
-      {leg ? <LegNav leg={leg} /> : null}
+      {leg ? (
+        <LegNav
+          leg={leg}
+          target={point}
+          enrouteAnswered={answeredEnroute.has(leg.id)}
+          onScored={onScored}
+          toast={toast}
+          onEnrouteAnswered={() => onEnrouteAnswered(leg.id)}
+        />
+      ) : null}
 
       {!unlocked && point.gps_unlock ? (
         <GpsUnlock point={point} onUnlock={() => setUnlocked(true)} toast={toast} />
@@ -289,8 +310,32 @@ function WaypointView(props: {
   );
 }
 
+// bearing (0..360, 0=N) from point a to point b
+function bearingTo(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const φ1 = toRad(a.lat), φ2 = toRad(b.lat);
+  const Δλ = toRad(b.lng - a.lng);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
 // ── leg navigation (per mode) ────────────────────────────────────────────────
-function LegNav({ leg }: { leg: Leg }) {
+function LegNav({
+  leg,
+  target,
+  enrouteAnswered,
+  onScored,
+  toast,
+  onEnrouteAnswered,
+}: {
+  leg: Leg;
+  target: Point;
+  enrouteAnswered: boolean;
+  onScored: (score: number) => void;
+  toast: (m: string) => void;
+  onEnrouteAnswered: () => void;
+}) {
   const nav = NAV_BY_MODE[leg.nav_mode];
   return (
     <div className="card mb-3.5 border-l-4 border-teal">
@@ -298,25 +343,7 @@ function LegNav({ leg }: { leg: Leg }) {
         {nav.icon} {nav.label.split(" (")[0]}
       </h3>
 
-      {leg.nav_mode === "compass" ? (
-        <div className="flex flex-col items-center py-1.5">
-          <div className="compass">
-            <span className="pt" style={{ top: 8, left: "50%", transform: "translateX(-50%)" }}>N</span>
-            <span className="pt" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)" }}>Z</span>
-            <span className="pt" style={{ left: 10, top: "50%", transform: "translateY(-50%)" }}>W</span>
-            <span className="pt" style={{ right: 10, top: "50%", transform: "translateY(-50%)" }}>O</span>
-            <div className="needle" style={{ transform: `rotate(${leg.bearing ?? 0}deg)` }} />
-          </div>
-          <div className="mt-3 flex gap-6 font-bold text-teal-dark">
-            <div className="text-center">
-              <b className="block text-[22px] text-coral">{leg.bearing ?? "?"}°</b>koers
-            </div>
-            <div className="text-center">
-              <b className="block text-[22px] text-coral">{leg.distance ?? "?"} m</b>afstand
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {leg.nav_mode === "compass" ? <LiveCompass target={target} /> : null}
 
       {leg.nav_mode === "routebook" || leg.nav_mode === "turn" ? (
         <ol className="list-decimal space-y-1 pl-5 text-sm leading-relaxed">
@@ -333,10 +360,132 @@ function LegNav({ leg }: { leg: Leg }) {
       ) : null}
 
       {leg.enroute_enabled ? (
-        <div className="mt-2.5 rounded-soft bg-purple-light p-2.5 text-[13px] font-semibold text-purple">
-          ❓ Onderwegvraag actief: {leg.enroute_question} ({leg.enroute_points} ptn)
-        </div>
+        <EnrouteQuestion
+          leg={leg}
+          answered={enrouteAnswered}
+          onScored={onScored}
+          toast={toast}
+          onAnswered={onEnrouteAnswered}
+        />
       ) : null}
+    </div>
+  );
+}
+
+// ── live compass: bearing + distance from the team's live position ───────────
+function LiveCompass({ target }: { target: Point }) {
+  const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    if (!("geolocation" in navigator)) {
+      setErr(true);
+      return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      (p) => setPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => setErr(true),
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
+
+  const hasTarget = target.lat != null && target.lng != null;
+  const bearing =
+    pos && hasTarget ? (bearingTo(pos, { lat: target.lat!, lng: target.lng! }) + 360) % 360 : null;
+  const distance =
+    pos && hasTarget ? Math.round(haversine(pos, { lat: target.lat!, lng: target.lng! })) : null;
+
+  return (
+    <div className="flex flex-col items-center py-1.5">
+      <div className="compass">
+        <span className="pt" style={{ top: 8, left: "50%", transform: "translateX(-50%)" }}>N</span>
+        <span className="pt" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)" }}>Z</span>
+        <span className="pt" style={{ left: 10, top: "50%", transform: "translateY(-50%)" }}>W</span>
+        <span className="pt" style={{ right: 10, top: "50%", transform: "translateY(-50%)" }}>O</span>
+        <div className="needle" style={{ transform: `rotate(${bearing ?? 0}deg)` }} />
+      </div>
+      <div className="mt-3 flex gap-6 font-bold text-teal-dark">
+        <div className="text-center">
+          <b className="block text-[22px] text-coral">{bearing != null ? `${Math.round(bearing)}°` : "—"}</b>koers
+        </div>
+        <div className="text-center">
+          <b className="block text-[22px] text-coral">{distance != null ? (distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`) : "—"}</b>afstand
+        </div>
+      </div>
+      <p className="mt-2 text-center text-xs text-polder-grey">
+        {err
+          ? "Zet gps aan om koers en afstand te zien."
+          : pos
+            ? "Live berekend vanaf jullie locatie 📍"
+            : "📡 Locatie bepalen…"}
+      </p>
+    </div>
+  );
+}
+
+// ── en-route question (graded when points > 0, social at 0 points) ───────────
+function EnrouteQuestion({
+  leg,
+  answered,
+  onScored,
+  toast,
+  onAnswered,
+}: {
+  leg: Leg;
+  answered: boolean;
+  onScored: (score: number) => void;
+  toast: (m: string) => void;
+  onAnswered: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+  const social = leg.enroute_points <= 0;
+
+  async function submit() {
+    setBusy(true);
+    const r = await answerEnroute(leg.id, text);
+    setBusy(false);
+    if (r.error) return toast(r.error);
+    setFeedback({ ok: r.ok, msg: r.feedback });
+    onScored(r.score);
+    if (r.complete) onAnswered();
+  }
+
+  return (
+    <div className={`mt-2.5 rounded-soft p-2.5 ${social ? "bg-purple-light" : "bg-white border-[1.5px] border-purple"}`}>
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <span className="text-[13px] font-bold text-purple">❓ Onderwegvraag</span>
+        {social ? (
+          <span className="chip">💚 Kennismaken</span>
+        ) : (
+          <>
+            <span className="chip">+{leg.enroute_points} punten</span>
+            <span className="chip chip-teal">AUTO</span>
+          </>
+        )}
+      </div>
+      <p className="mb-2 text-sm font-semibold">{leg.enroute_question}</p>
+
+      {answered || feedback?.ok ? (
+        <div className={social ? "feedback-ok" : "feedback-ok"}>
+          {social ? "💚 Bedankt voor het delen!" : "✅ Beantwoord!"}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <input
+            className="input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={social ? "Deel jullie antwoord…" : "Jullie antwoord"}
+          />
+          {feedback && !feedback.ok ? <div className="feedback-err">{feedback.msg}</div> : null}
+          <button className="btn btn-purple w-full" disabled={busy || (social && !text.trim())} onClick={submit}>
+            {social ? "Delen 💚" : "Antwoord indienen"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
