@@ -19,6 +19,7 @@ import {
   deletePoint,
   deleteRally,
   importGpx,
+  movePointTo,
   renameRally,
   reorderPoint,
   startTestPlay,
@@ -292,6 +293,8 @@ export default function EditorClient({
                 key={selPoint.id}
                 rallyId={rally.id}
                 point={selPoint}
+                orderIndex={points.findIndex((p) => p.id === selPoint.id)}
+                total={points.length}
                 assignment={assignmentByPoint.get(selPoint.id)}
                 onDelete={() => { setSel(null); run(() => deletePoint(rally.id, selPoint.id)); }}
                 run={run}
@@ -319,12 +322,16 @@ export default function EditorClient({
 function PointSettings({
   rallyId,
   point,
+  orderIndex,
+  total,
   assignment,
   onDelete,
   run,
 }: {
   rallyId: string;
   point: Point;
+  orderIndex: number;
+  total: number;
   assignment?: Assignment;
   onDelete: () => void;
   run: (fn: () => Promise<unknown>) => void;
@@ -336,6 +343,21 @@ function PointSettings({
       <div>
         <label className="field-label">Naam punt</label>
         <input defaultValue={point.name} className="input" onBlur={(e) => run(() => updatePoint(rallyId, point.id, { name: e.target.value }))} />
+      </div>
+      <div>
+        <label className="field-label">Volgorde (1 = start, {total} = finish)</label>
+        <input
+          key={orderIndex}
+          type="number"
+          min={1}
+          max={total}
+          defaultValue={orderIndex + 1}
+          className="input"
+          onBlur={(e) => {
+            const v = Number(e.target.value);
+            if (v >= 1 && v <= total && v - 1 !== orderIndex) run(() => movePointTo(rallyId, point.id, v - 1));
+          }}
+        />
       </div>
       <div>
         <label className="field-label">Gps-locatie</label>

@@ -124,7 +124,8 @@ export async function addPoint(rallyId: string, lat: number, lng: number) {
   const p = points?.length ?? 0;
 
   // Append at the end; the newest point becomes the finish, the first stays the
-  // start (kinds recomputed below). This matches placing points in walking order.
+  // start. This matches placing points in walking order. Only the previous
+  // finish (if any) needs its kind updated → no full recompute.
   await db.from("points").insert({
     rally_id: rallyId,
     position: p,
@@ -138,7 +139,10 @@ export async function addPoint(rallyId: string, lat: number, lng: number) {
   if (p >= 1) {
     await db.from("legs").insert({ rally_id: rallyId, position: p - 1, nav_mode: "routebook" });
   }
-  await recomputeKinds(db, rallyId);
+  if (p >= 2) {
+    // the point that used to be the finish becomes a regular waypoint
+    await db.from("points").update({ kind: "waypoint" }).eq("id", points![p - 1].id);
+  }
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
@@ -231,12 +235,37 @@ export async function reorderPoint(rallyId: string, pointId: string, dir: -1 | 1
 
   const { data: points } = await db.from("points").select("id,position").eq("rally_id", rallyId).order("position");
   if (!points) return;
+  const n = points.length;
   const i = points.findIndex((p) => p.id === pointId);
   const j = i + dir;
-  if (i < 0 || j < 0 || j >= points.length) return;
+  if (i < 0 || j < 0 || j >= n) return;
+
+  // Fast adjacent swap: only 3 updates (temp to dodge the unique constraint),
+  // and set the two moved points' kinds inline based on their new position.
+  const kindFor = (pos: number) => (pos === 0 ? "start" : pos === n - 1 ? "finish" : "waypoint");
+  const A = points[i], B = points[j];
+  await db.from("points").update({ position: -1 }).eq("id", A.id);
+  await db.from("points").update({ position: A.position, kind: kindFor(A.position) }).eq("id", B.id);
+  await db.from("points").update({ position: B.position, kind: kindFor(B.position) }).eq("id", A.id);
+
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
+/** Move a point directly to a given 0-based index (type the order number). */
+export async function movePointTo(rallyId: string, pointId: string, targetIndex: number) {
+  const db = await createClient();
+  await requireUser(db);
+  const { data: points } = await db.from("points").select("id").eq("rally_id", rallyId).order("position");
+  if (!points) return;
+  const n = points.length;
+  const i = points.findIndex((p) => p.id === pointId);
+  if (i < 0) return;
+  const t = Math.max(0, Math.min(n - 1, Math.round(targetIndex)));
+  if (t === i) return;
 
   const order = points.map((p) => p.id);
-  [order[i], order[j]] = [order[j], order[i]];
+  order.splice(i, 1);
+  order.splice(t, 0, pointId);
   await resequence(db, "points", order);
   await recomputeKinds(db, rallyId);
   revalidatePath(`/ontwerp/${rallyId}`);
