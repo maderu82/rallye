@@ -51,18 +51,32 @@ export async function joinRally(formData: FormData) {
     .from("rallies")
     .select("id,published")
     .eq("join_code", joinCode)
-    .eq("published", true)
     .maybeSingle();
-  if (!rally) return { error: "Onbekende of gesloten teamcode." };
+  if (!rally) return { error: "Onbekende teamcode. Controleer de code bij de organisator." };
+  if (!rally.published) return { error: "Deze rally is nog niet gepubliceerd. Vraag de organisator om te publiceren." };
 
-  const { data: team, error } = await db
+  // Find-or-create the team by name within this rally: rejoining with the same
+  // team name resumes that team; a new name starts a new team.
+  const escaped = teamName.replace(/[\\%_]/g, (m) => "\\" + m);
+  const { data: existing } = await db
     .from("teams")
-    .insert({ rally_id: rally.id, name: teamName })
     .select("session_token")
-    .single();
-  if (error || !team) return { error: "Kon het team niet aanmaken. Probeer opnieuw." };
+    .eq("rally_id", rally.id)
+    .ilike("name", escaped)
+    .limit(1);
 
-  (await cookies()).set(TEAM_COOKIE, team.session_token, {
+  let token = existing?.[0]?.session_token;
+  if (!token) {
+    const { data: team, error } = await db
+      .from("teams")
+      .insert({ rally_id: rally.id, name: teamName })
+      .select("session_token")
+      .single();
+    if (error || !team) return { error: "Kon het team niet aanmaken. Probeer opnieuw." };
+    token = team.session_token;
+  }
+
+  (await cookies()).set(TEAM_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
