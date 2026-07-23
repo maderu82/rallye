@@ -410,7 +410,7 @@ function LiveCompass({ target }: { target: Point }) {
     const id = navigator.geolocation.watchPosition(
       (p) => setPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
       () => setErr(true),
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 },
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
@@ -467,12 +467,12 @@ function LiveCompass({ target }: { target: Point }) {
 
   return (
     <div className="flex flex-col items-center py-1.5">
-      <div className="compass" style={{ transform: `rotate(${dialRot}deg)`, transition: "transform .3s ease" }}>
+      <div className="compass" style={{ transform: `rotate(${dialRot}deg)`, transition: "transform .12s linear" }}>
         <span className="pt" style={{ top: 8, left: "50%", transform: "translateX(-50%)" }}>N</span>
         <span className="pt" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)" }}>Z</span>
         <span className="pt" style={{ left: 10, top: "50%", transform: "translateY(-50%)" }}>W</span>
         <span className="pt" style={{ right: 10, top: "50%", transform: "translateY(-50%)" }}>O</span>
-        <div className="needle" style={{ transform: `rotate(${bearing ?? 0}deg)` }} />
+        <div className="needle" style={{ transform: `rotate(${bearing ?? 0}deg)`, transition: "transform .2s ease" }} />
       </div>
       <div className="mt-3 flex gap-6 font-bold text-teal-dark">
         <div className="text-center">
