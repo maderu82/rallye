@@ -82,7 +82,7 @@ export function grade(
       const ok = submitted.length === correct.length && submitted.every((v, i) => v === correct[i]);
       return ok
         ? { complete: true, delta: a.points, ok, feedback: "✅ Juiste volgorde!", kind: "assignment" }
-        : { complete: false, delta: 0, ok, feedback: "❌ Nog niet in de juiste volgorde.", kind: "assignment" };
+        : wrong("❌ Nog niet in de juiste volgorde.");
     }
 
     case "estimation": {

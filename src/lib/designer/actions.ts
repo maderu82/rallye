@@ -183,7 +183,7 @@ export async function importGpx(rallyId: string, coords: { name: string; lat: nu
 export async function updatePoint(
   rallyId: string,
   pointId: string,
-  fields: Partial<{ name: string; lat: number | null; lng: number | null; has_task: boolean; gps_unlock: boolean; note: string }>,
+  fields: Partial<{ name: string; lat: number | null; lng: number | null; has_task: boolean; gps_unlock: boolean; unlock_radius: number; note: string }>,
 ) {
   const db = await createClient();
   await requireUser(db);
@@ -213,18 +213,24 @@ export async function deletePoint(rallyId: string, pointId: string) {
   const db = await createClient();
   await requireUser(db);
 
-  await db.from("points").delete().eq("id", pointId);
+  const { error } = await db.from("points").delete().eq("id", pointId);
+  if (error) throw new Error(error.message);
 
-  // Drop the highest-position leg to keep legs = points − 1, then resequence.
-  const { data: legs } = await db.from("legs").select("id,position").eq("rally_id", rallyId).order("position");
-  if (legs?.length) {
-    await db.from("legs").delete().eq("id", legs[legs.length - 1].id);
+  // Keep legs = points − 1 and positions contiguous. Wrapped so a hiccup here
+  // never hides the fact that the point itself was deleted.
+  try {
+    const { data: legs } = await db.from("legs").select("id,position").eq("rally_id", rallyId).order("position");
+    if (legs?.length) {
+      await db.from("legs").delete().eq("id", legs[legs.length - 1].id);
+    }
+    const { data: points } = await db.from("points").select("id").eq("rally_id", rallyId).order("position");
+    const { data: legs2 } = await db.from("legs").select("id").eq("rally_id", rallyId).order("position");
+    await resequence(db, "points", (points ?? []).map((p) => p.id));
+    await resequence(db, "legs", (legs2 ?? []).map((l) => l.id));
+    await recomputeKinds(db, rallyId);
+  } catch {
+    // ignore — the point is deleted; ordering will self-heal on the next change
   }
-  const { data: points } = await db.from("points").select("id").eq("rally_id", rallyId).order("position");
-  const { data: legs2 } = await db.from("legs").select("id").eq("rally_id", rallyId).order("position");
-  await resequence(db, "points", (points ?? []).map((p) => p.id));
-  await resequence(db, "legs", (legs2 ?? []).map((l) => l.id));
-  await recomputeKinds(db, rallyId);
 
   revalidatePath(`/ontwerp/${rallyId}`);
 }

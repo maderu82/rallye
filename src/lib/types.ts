@@ -24,6 +24,7 @@ export interface Point {
   map_y: number | null;
   has_task: boolean;
   gps_unlock: boolean;
+  unlock_radius: number;
   note: string | null;
   created_at: string;
 }

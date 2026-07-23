@@ -31,11 +31,13 @@ create table if not exists public.points (
   map_y       numeric,
   has_task    boolean not null default false,
   gps_unlock  boolean not null default true,
+  unlock_radius int not null default 50,
   note        text,
   created_at  timestamptz not null default now(),
   unique (rally_id, position)
 );
 create index if not exists points_rally_idx on public.points (rally_id, position);
+alter table public.points add column if not exists unlock_radius int not null default 50;
 
 -- ─── assignments ────────────────────────────────────────────────────────────
 create table if not exists public.assignments (

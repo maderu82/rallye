@@ -291,7 +291,10 @@ function WaypointView(props: {
   onEnrouteAnswered: (legId: string) => void;
 }) {
   const { point, leg, assignment, stepIndex, total, completed, testMode, onScored, toast, onComplete, onNext, isLast, answeredEnroute, onEnrouteAnswered } = props;
-  const [unlocked, setUnlocked] = useState(!point.gps_unlock);
+  // A speed test must be started at the beginning of the leg, so it isn't
+  // arrival-gated like the other assignments.
+  const gated = point.gps_unlock && assignment?.type !== "speed_test";
+  const [unlocked, setUnlocked] = useState(!gated);
   const done = assignment ? completed.has(assignment.id) : true;
 
   return (
@@ -319,12 +322,12 @@ function WaypointView(props: {
         </div>
       ) : null}
 
-      {!unlocked && point.gps_unlock ? (
+      {!unlocked && gated ? (
         <GpsUnlock point={point} testMode={testMode} onUnlock={() => setUnlocked(true)} toast={toast} />
       ) : null}
 
       {assignment ? (
-        <div className={unlocked || !point.gps_unlock ? "" : "pointer-events-none opacity-50 grayscale"}>
+        <div className={unlocked || !gated ? "" : "pointer-events-none opacity-50 grayscale"}>
           <AssignmentCard
             assignment={assignment}
             done={done}
@@ -608,57 +611,150 @@ function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+// Continuously watches the team's position and auto-unlocks the assignment when
+// they arrive within the point's unlock radius — like reaching a roadbook point.
 function GpsUnlock({ point, testMode, onUnlock, toast }: { point: Point; testMode: boolean; onUnlock: () => void; toast: (m: string) => void }) {
-  const [checking, setChecking] = useState(false);
   const [dist, setDist] = useState<number | null>(null);
-  const THRESHOLD = 120; // metres
+  const [err, setErr] = useState(false);
+  const radius = point.unlock_radius || 50;
 
-  function check() {
-    if (!("geolocation" in navigator)) {
-      setDist(-1);
+  useEffect(() => {
+    if (point.lat == null || point.lng == null) {
+      // no coordinates configured → nothing to gate on, open it
+      onUnlock();
       return;
     }
-    setChecking(true);
-    navigator.geolocation.getCurrentPosition(
+    if (!("geolocation" in navigator)) {
+      setErr(true);
+      return;
+    }
+    const target = { lat: point.lat, lng: point.lng };
+    const id = navigator.geolocation.watchPosition(
       (pos) => {
-        setChecking(false);
-        if (point.lat == null || point.lng == null) {
-          onUnlock();
-          return;
-        }
-        const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { lat: point.lat, lng: point.lng });
+        setErr(false);
+        const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, target);
         setDist(Math.round(d));
-        if (d <= THRESHOLD) {
+        // allow for gps inaccuracy so it reliably triggers on arrival
+        if (d <= Math.max(radius, (pos.coords.accuracy || 0) * 0.6)) {
+          navigator.geolocation.clearWatch(id);
           toast("📍 Locatie bereikt — opdracht ontgrendeld!");
           onUnlock();
         }
       },
-      () => {
-        setChecking(false);
-        setDist(-1);
-      },
-      { enableHighAccuracy: true, timeout: 8000 },
+      () => setErr(true),
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
     );
-  }
+    return () => navigator.geolocation.clearWatch(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="mb-3">
       <div className="mb-2.5 flex items-center gap-2 rounded-soft bg-coral-light p-2.5 text-[13px] font-bold text-coral">
-        🔒 Opdracht vergrendeld — kom eerst op de locatie aan.
+        🔒 Opdracht vergrendeld — de opdracht opent automatisch zodra je aankomt.
       </div>
-      <button className="btn btn-primary w-full" onClick={check} disabled={checking}>
-        {checking ? "📡 Locatie bepalen…" : "📍 Ik ben op locatie"}
-      </button>
-      {dist !== null && dist >= 0 ? (
-        <p className="mt-2 text-center text-[13px] text-polder-grey">Nog {dist} m te gaan.</p>
-      ) : null}
-      {dist === -1 ? (
-        <p className="mt-2 text-center text-[13px] text-polder-grey">Geen gps beschikbaar.</p>
-      ) : null}
+      {dist != null ? (
+        <div className="rounded-soft bg-teal-light p-3 text-center">
+          <div className="text-3xl font-bold text-teal-dark">
+            {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`}
+          </div>
+          <p className="text-[13px] text-polder-grey">tot het volgende punt — blijf navigeren 🧭</p>
+        </div>
+      ) : err ? (
+        <p className="text-center text-[13px] text-polder-grey">📡 Geen gps. Zet locatie aan (of gebruik testmodus).</p>
+      ) : (
+        <p className="text-center text-[13px] text-polder-grey">📡 Locatie bepalen…</p>
+      )}
       {testMode ? (
         <button className="btn-demo mt-2" onClick={onUnlock}>
           🧪 Test: locatie bereikt
         </button>
+      ) : null}
+    </div>
+  );
+}
+
+// ── average-speed test: measured by GPS (start → arrival) ────────────────────
+function SpeedTest({
+  cfg,
+  busy,
+  testMode,
+  send,
+}: {
+  cfg: Record<string, unknown>;
+  busy: boolean;
+  testMode: boolean;
+  send: (s: Record<string, unknown>) => Promise<{ ok: boolean }>;
+}) {
+  const target = Number(cfg.target ?? 30);
+  const [phase, setPhase] = useState<"idle" | "measuring">("idle");
+  const [distM, setDistM] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const watchRef = useRef<number | null>(null);
+  const startRef = useRef(0);
+  const lastRef = useRef<{ lat: number; lng: number } | null>(null);
+  const distRef = useRef(0);
+  const [testVal, setTestVal] = useState<number>(target);
+
+  useEffect(() => () => {
+    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
+  }, []);
+
+  const avg = elapsed > 0 ? (distM / 1000) / (elapsed / 3600) : 0;
+
+  function start() {
+    if (!("geolocation" in navigator)) return;
+    setPhase("measuring");
+    startRef.current = Date.now();
+    distRef.current = 0;
+    lastRef.current = null;
+    setDistM(0);
+    setElapsed(0);
+    const tick = setInterval(() => setElapsed((Date.now() - startRef.current) / 1000), 1000);
+    watchRef.current = navigator.geolocation.watchPosition(
+      (p) => {
+        const cur = { lat: p.coords.latitude, lng: p.coords.longitude };
+        if (lastRef.current) distRef.current += haversine(lastRef.current, cur);
+        lastRef.current = cur;
+        setDistM(Math.round(distRef.current));
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
+    );
+    // store interval id on the window-less closure via watch cleanup
+    intervalRef.current = tick;
+  }
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function finish() {
+    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    send({ value: Math.round(avg) });
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[13px] text-polder-grey">
+        Doel: gemiddeld <b className="text-coral">{target} km/u</b>. Druk op start aan het begin van het traject; de gps meet je gemiddelde tot het eindpunt.
+      </p>
+      {phase === "idle" ? (
+        <button className="btn btn-primary w-full" disabled={busy} onClick={start}>▶️ Start meten</button>
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-teal-dark">{(distM / 1000).toFixed(2)}</b><span className="text-[11px] text-polder-grey">km</span></div>
+            <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-teal-dark">{Math.floor(elapsed / 60)}:{String(Math.floor(elapsed % 60)).padStart(2, "0")}</b><span className="text-[11px] text-polder-grey">tijd</span></div>
+            <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-coral">{Math.round(avg)}</b><span className="text-[11px] text-polder-grey">km/u nu</span></div>
+          </div>
+          <button className="btn btn-coral w-full" disabled={busy} onClick={finish}>🏁 Eindpunt bereikt — dien in</button>
+        </div>
+      )}
+      {testMode ? (
+        <div className="rounded-soft border border-dashed border-[#C9A227] p-2">
+          <p className="mb-1 text-[11px] font-bold text-[#7A5D00]">🧪 Test: kies een gemiddelde</p>
+          <input type="range" min={Number(cfg.min ?? 20)} max={Number(cfg.max ?? 56)} value={testVal} onChange={(e) => setTestVal(Number(e.target.value))} className="w-full accent-coral" />
+          <button className="btn-demo mt-1" disabled={busy} onClick={() => send({ value: testVal })}>🧪 Simuleer {testVal} km/u</button>
+        </div>
       ) : null}
     </div>
   );
@@ -913,26 +1009,8 @@ function TypeBody({
       );
     }
 
-    case "speed_test": {
-      const min = Number(cfg.min ?? 20);
-      const max = Number(cfg.max ?? 56);
-      return (
-        <div>
-          <div className="my-1.5 text-center text-3xl font-bold text-teal-dark">{value} km/u</div>
-          <input
-            type="range"
-            min={min}
-            max={max}
-            value={value}
-            onChange={(e) => setValue(Number(e.target.value))}
-            className="w-full accent-coral"
-          />
-          <button className="btn-demo mt-3" disabled={busy} onClick={() => send({ value })}>
-            🏁 Simuleer: traject voltooid met dit gemiddelde
-          </button>
-        </div>
-      );
-    }
+    case "speed_test":
+      return <SpeedTest cfg={cfg} busy={busy} testMode={testMode} send={send} />;
 
     case "code_breaker":
       return (

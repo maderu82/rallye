@@ -297,7 +297,7 @@ export default function EditorClient({
                 orderIndex={points.findIndex((p) => p.id === selPoint.id)}
                 total={points.length}
                 assignment={assignmentByPoint.get(selPoint.id)}
-                onDelete={() => { setSel(null); run(() => deletePoint(rally.id, selPoint.id)); }}
+                onDelete={() => { if (confirm(`Punt "${selPoint.name}" verwijderen?`)) { setSel(null); run(() => deletePoint(rally.id, selPoint.id)); } }}
                 run={run}
               />
             ) : selLeg ? (
@@ -428,8 +428,14 @@ function PointSettings({
               ) : null}
               <label className="flex items-center gap-2.5 text-sm font-semibold">
                 <input type="checkbox" defaultChecked={point.gps_unlock} className="scale-125 accent-teal" onChange={(e) => run(() => updatePoint(rallyId, point.id, { gps_unlock: e.target.checked }))} />
-                Ontgrendelen via gps-nabijheid
+                Automatisch ontgrendelen bij aankomst (gps)
               </label>
+              {point.gps_unlock ? (
+                <div>
+                  <label className="field-label">Ontgrendel-straal (m) — te voet ~25, met de auto ~75</label>
+                  <input type="number" min={10} defaultValue={point.unlock_radius} className="input" onBlur={(e) => run(() => updatePoint(rallyId, point.id, { unlock_radius: Math.max(10, Number(e.target.value) || 50) }))} />
+                </div>
+              ) : null}
 
               <AssignmentConfig key={assignment.id + assignment.type} rallyId={rallyId} assignment={assignment} run={run} />
             </div>
