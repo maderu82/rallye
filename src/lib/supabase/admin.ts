@@ -9,10 +9,12 @@ import { createClient } from "@supabase/supabase-js";
  * role key is not a NEXT_PUBLIC_ variable.
  */
 export function createAdminClient() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Accept both the legacy service_role key and the new-style secret key that
+  // the Vercel↔Supabase integration provisions (SUPABASE_SECRET_KEY).
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
   if (!key) {
     throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY is not set — required for participant/grading server logic.",
+      "No Supabase secret key set — need SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY.",
     );
   }
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {

@@ -10,9 +10,14 @@ type CookieToSet = { name: string; value: string; options: CookieOptions };
 export async function createClient() {
   const cookieStore = await cookies();
 
+  // Accept the legacy anon key or the new-style publishable key (the latter is
+  // what the Vercel↔Supabase integration provisions).
+  const anonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    anonKey!,
     {
       cookies: {
         getAll() {
