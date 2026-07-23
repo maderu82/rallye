@@ -8,9 +8,34 @@ export const dynamic = "force-dynamic";
 // so the "wrong project" problem is visible without DevTools or SQL.
 export default async function StatusPage() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
   const host = url.replace(/^https?:\/\//, "").replace(/\.supabase\.co.*/, "");
-  const hasEnv = Boolean(url && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const hasService = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const hasEnv = Boolean(url && anon);
+  const hasService = Boolean(service);
+
+  // A Supabase key (legacy) is a JWT whose payload carries a "ref" = the project
+  // it belongs to. Decode it (no verification) so we can catch keys that belong
+  // to a DIFFERENT project than the URL — the classic cause of "connected but
+  // sees no data".
+  function keyRef(key: string): string | null {
+    try {
+      const part = key.split(".")[1];
+      if (!part) return null;
+      const json = Buffer.from(part, "base64url").toString("utf8");
+      const ref = JSON.parse(json).ref;
+      return typeof ref === "string" ? ref : null;
+    } catch {
+      return null;
+    }
+  }
+  const anonRef = keyRef(anon);
+  const serviceRef = keyRef(service);
+  // Only flag a mismatch when we could actually decode a ref (new-style keys
+  // can't be decoded — then we don't claim a problem).
+  const serviceMatches = serviceRef == null || host === "" || serviceRef === host;
+  const anonMatches = anonRef == null || host === "" || anonRef === host;
+  const keysMatch = serviceMatches && anonMatches;
 
   let tablesOk = false;
   let rallyCount = 0;
@@ -47,7 +72,7 @@ export default async function StatusPage() {
     </div>
   );
 
-  const allGood = hasEnv && hasService && tablesOk && (userCount ?? 0) > 0;
+  const allGood = hasEnv && hasService && keysMatch && tablesOk && (userCount ?? 0) > 0;
 
   return (
     <main className="mx-auto max-w-[560px] px-5 py-10">
@@ -58,9 +83,25 @@ export default async function StatusPage() {
       <p className="mb-5 text-sm text-polder-grey">Snelle check of de app goed aan Supabase gekoppeld is.</p>
 
       <div className="space-y-2.5">
-        <Row ok={hasEnv} label="App gekoppeld aan Supabase" detail={host ? `Project: ${host}` : "Geen Supabase-URL ingesteld in Vercel."} />
+        <Row ok={hasEnv} label="App gekoppeld aan Supabase" detail={host ? `Project (URL): ${host}` : "Geen Supabase-URL ingesteld in Vercel."} />
         <Row ok={hasService} label="Service-role sleutel aanwezig" detail={hasService ? "OK" : "SUPABASE_SERVICE_ROLE_KEY ontbreekt in Vercel."} />
-        <Row ok={tablesOk} label="Database-tabellen aanwezig" detail={tablesOk ? `${rallyCount} rally('s) gevonden` : errorMsg || "Tabellen niet gevonden — draai setup.sql in dit project."} />
+        <Row
+          ok={keysMatch}
+          label="Sleutels horen bij ditzelfde project"
+          detail={
+            keysMatch
+              ? "URL en sleutels wijzen naar hetzelfde project."
+              : `LET OP — verkeerde sleutel! URL = ${host || "?"}, maar ` +
+                [
+                  serviceMatches ? "" : `service_role hoort bij ${serviceRef}`,
+                  anonMatches ? "" : `anon hoort bij ${anonRef}`,
+                ]
+                  .filter(Boolean)
+                  .join(" en ") +
+                `. Vervang die sleutel in Vercel door die van project ${host}.`
+          }
+        />
+        <Row ok={tablesOk} label="Database-tabellen aanwezig" detail={tablesOk ? `${rallyCount} rally('s) gevonden` : (errorMsg ? `Fout: ${errorMsg}` : "Tabellen niet gevonden — draai setup.sql in dit project.")} />
         <Row ok={demoPresent} label="Demo-rally (code RLY-7H2K)" detail={demoPresent ? "Aanwezig — je kunt direct spelen." : "Niet aanwezig (optioneel)."} />
         <Row
           ok={(userCount ?? 0) > 0}
