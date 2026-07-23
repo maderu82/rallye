@@ -356,7 +356,7 @@ export async function answerEnroute(
     rally_id: team.rally_id,
     kind: "enroute",
     points_delta: pts,
-    detail: { leg_id: legId, complete: true },
+    detail: { leg_id: legId, complete: true, answer: text },
   });
   return { ok: true, complete: true, feedback: `✅ Goed! +${pts} punten.`, score: await scoreOf(db, team.id) };
 }

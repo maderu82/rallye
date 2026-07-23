@@ -65,7 +65,9 @@ type LiveTeam = {
   finished: boolean;
   score: number;
   hints: number;
+  created_at: string;
 };
+type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; when: string };
 type Sel = { kind: "point" | "leg"; id: string } | null;
 
 export default function EditorClient({
@@ -74,12 +76,14 @@ export default function EditorClient({
   legs,
   assignments,
   liveTeams,
+  teamActivity,
 }: {
   rally: Rally;
   points: Point[];
   legs: Leg[];
   assignments: Assignment[];
   liveTeams: LiveTeam[];
+  teamActivity: Record<string, ActivityItem[]>;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -305,7 +309,7 @@ export default function EditorClient({
           </div>
         </div>
       ) : (
-        <LiveView rallyId={rally.id} points={points} teams={liveTeams} labelOf={labelOf} onRefresh={() => router.refresh()} />
+        <LiveView rallyId={rally.id} points={points} teams={liveTeams} activity={teamActivity} labelOf={labelOf} onRefresh={() => router.refresh()} />
       )}
     </main>
   );
@@ -497,16 +501,19 @@ function LiveView({
   rallyId,
   points,
   teams,
+  activity,
   labelOf,
   onRefresh,
 }: {
   rallyId: string;
   points: Point[];
   teams: LiveTeam[];
+  activity: Record<string, ActivityItem[]>;
   labelOf: (p: Point) => string;
   onRefresh: () => void;
 }) {
   const maxIndex = Math.max(1, points.length - 1);
+  const [openTeam, setOpenTeam] = useState<string | null>(null);
 
   // Realtime: refresh team positions/scores as team_scores changes.
   useEffect(() => {
@@ -545,24 +552,60 @@ function LiveView({
         </div>
       </div>
       <div className="card">
-        <h3 className="mb-2.5 text-sm font-bold uppercase tracking-wide text-teal-dark">Voortgang per team</h3>
+        <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-teal-dark">Ingeschreven teams ({teams.length})</h3>
+        <p className="mb-2.5 text-xs text-polder-grey">Klik een team open om hun antwoorden en foto&apos;s te zien.</p>
         {teams.length ? (
           <div className="space-y-2">
-            {teams.map((t, i) => (
-              <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${t.finished ? "border-coral" : "border-teal"}`}>
-                <div className="flex items-center gap-2 font-bold">
-                  <span className="inline-block h-3 w-3 rounded-full" style={{ background: TEAM_COLORS[i % 4] }} />
-                  {t.name}
-                  <span className="ml-auto text-teal-dark">{t.score} ptn</span>
+            {teams.map((t, i) => {
+              const items = activity[t.id] ?? [];
+              const open = openTeam === t.id;
+              return (
+                <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${t.finished ? "border-coral" : "border-teal"}`}>
+                  <button className="w-full text-left" onClick={() => setOpenTeam(open ? null : t.id)}>
+                    <div className="flex items-center gap-2 font-bold">
+                      <span className="inline-block h-3 w-3 rounded-full" style={{ background: TEAM_COLORS[i % 4] }} />
+                      {t.name}
+                      <span className="ml-auto text-teal-dark">{t.score} ptn</span>
+                      <span className="text-xs text-polder-grey">{open ? "▲" : "▼"}</span>
+                    </div>
+                    <small className="mt-1 block text-xs text-polder-grey">
+                      {t.finished ? "🏁 Gefinisht" : `Onderweg · punt ${t.current_index}`} · {t.hints} hint{t.hints === 1 ? "" : "s"} · {items.length} antwoord{items.length === 1 ? "" : "en"}
+                    </small>
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-polder-line">
+                      <i className="block h-full rounded" style={{ width: `${Math.round(Math.min(1, t.current_index / maxIndex) * 100)}%`, background: t.finished ? "#D85A30" : "#1D9E75" }} />
+                    </div>
+                  </button>
+
+                  {open ? (
+                    <div className="mt-2.5 space-y-2 border-t border-polder-line pt-2.5">
+                      {items.length === 0 ? (
+                        <p className="text-xs text-polder-grey">Nog geen antwoorden.</p>
+                      ) : (
+                        items.map((it, k) => (
+                          <div key={k} className="rounded-soft bg-paper p-2">
+                            <div className="flex items-start gap-2">
+                              <span className="flex-1 text-[13px] font-semibold text-ink">{it.label}</span>
+                              <span className={`text-xs font-bold ${it.points < 0 ? "text-coral" : "text-teal-dark"}`}>
+                                {it.points > 0 ? "+" : ""}{it.points}
+                              </span>
+                            </div>
+                            {it.answer ? <p className="mt-0.5 text-[13px] text-polder-grey">Antwoord: <b className="text-ink">{it.answer}</b></p> : null}
+                            {it.photoUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <a href={it.photoUrl} target="_blank" rel="noreferrer">
+                                <img src={it.photoUrl} alt="Bewijsfoto" className="mt-1 max-h-40 w-full rounded-soft object-cover" />
+                              </a>
+                            ) : null}
+                            <p className="mt-0.5 text-[10px] text-polder-grey">{it.when}</p>
+                          </div>
+                        ))
+                      )}
+                      <Link href={`/ontwerp/${rallyId}/review`} className="btn btn-ghost w-full text-xs">🔎 Naar nakijken/corrigeren</Link>
+                    </div>
+                  ) : null}
                 </div>
-                <small className="mt-1 block text-xs text-polder-grey">
-                  {t.finished ? "🏁 Gefinisht" : `Onderweg · punt ${t.current_index}`} · {t.hints} hint{t.hints === 1 ? "" : "s"}
-                </small>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-polder-line">
-                  <i className="block h-full rounded" style={{ width: `${Math.round(Math.min(1, t.current_index / maxIndex) * 100)}%`, background: t.finished ? "#D85A30" : "#1D9E75" }} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="text-sm text-polder-grey">Nog geen teams. Zodra teams meedoen, verschijnen ze hier.</p>
