@@ -38,12 +38,24 @@ export function grade(
   const sol = a.solution ?? {};
   const cfg = a.public_config ?? {};
 
+  // wrong-answer penalty helper (applied on incorrect, retry-allowed answers)
+  const wrong = (msg: string): GradeResult => {
+    const pen = num(sol.wrongPenalty, 0);
+    return {
+      complete: false,
+      delta: -pen,
+      ok: false,
+      feedback: pen > 0 ? `${msg} (−${pen} punten)` : msg,
+      kind: pen > 0 ? "penalty" : "assignment",
+    };
+  };
+
   switch (a.type) {
     case "multiple_choice": {
       const ok = String(submission.choice) === String(sol.correct);
       return ok
         ? { complete: true, delta: a.points, ok, feedback: "✅ Goed beantwoord!", kind: "assignment" }
-        : { complete: false, delta: 0, ok, feedback: "❌ Helaas, dat klopt niet. Probeer opnieuw!", kind: "assignment" };
+        : wrong("❌ Helaas, dat klopt niet. Probeer opnieuw!");
     }
 
     case "open_question":
@@ -54,14 +66,14 @@ export function grade(
       const ok = accepted.includes(normalize(submission.text));
       return ok
         ? { complete: true, delta: a.points, ok, feedback: "✅ Correct!", kind: "assignment" }
-        : { complete: false, delta: 0, ok, feedback: "❌ Dat is niet het juiste antwoord.", kind: "assignment" };
+        : wrong("❌ Dat is niet het juiste antwoord.");
     }
 
     case "code_breaker": {
       const ok = normalize(submission.code) === normalize(sol.code);
       return ok
         ? { complete: true, delta: a.points, ok, feedback: "✅ Klik! Het slot springt open.", kind: "assignment" }
-        : { complete: false, delta: 0, ok, feedback: "❌ Het slot blijft dicht. Probeer een andere code.", kind: "assignment" };
+        : wrong("❌ Het slot blijft dicht. Probeer een andere code.");
     }
 
     case "ordering": {

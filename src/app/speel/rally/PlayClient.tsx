@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE } from "@/lib/blocks";
-import { answerEnroute, buyDigit, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, endTestPlay, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, useHint } from "@/lib/play/actions";
 import { createClient } from "@/lib/supabase/client";
 
 // Downscale a captured photo client-side to keep uploads small (<~8 MB action
@@ -160,8 +160,11 @@ export default function PlayClient({
   return (
     <main className="mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col">
       {testMode ? (
-        <div className="bg-[#FFF4D6] px-4 py-1.5 text-center text-xs font-bold text-[#7A5D00]">
-          🧪 Testmodus — hulpknoppen zoals “locatie simuleren” zijn zichtbaar. Deelnemers zien deze niet.
+        <div className="flex items-center justify-center gap-3 bg-[#FFF4D6] px-4 py-1.5 text-center text-xs font-bold text-[#7A5D00]">
+          <span>🧪 Testmodus — hulpknoppen zijn zichtbaar; deelnemers zien deze niet.</span>
+          <form action={endTestPlay}>
+            <button type="submit" className="rounded-full bg-[#7A5D00] px-2.5 py-0.5 text-white">✖ Einde test</button>
+          </form>
         </div>
       ) : null}
       <header className="sticky top-0 z-30 flex items-center gap-2.5 bg-teal px-4 py-3 text-white shadow-soft">
@@ -281,6 +284,12 @@ function WaypointView(props: {
         />
       ) : null}
 
+      {point.note ? (
+        <div className="mb-3.5 rounded-card bg-teal-light p-3 text-sm text-teal-dark">
+          📍 <b>{point.name}</b> — {point.note}
+        </div>
+      ) : null}
+
       {!unlocked && point.gps_unlock ? (
         <GpsUnlock point={point} testMode={testMode} onUnlock={() => setUnlocked(true)} toast={toast} />
       ) : null}
@@ -308,6 +317,15 @@ function WaypointView(props: {
       ) : null}
     </div>
   );
+}
+
+function shuffleArr<T>(a: T[]): T[] {
+  const b = [...a];
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
 }
 
 // bearing (0..360, 0=N) from point a to point b
@@ -747,6 +765,7 @@ function TypeBody({
   const [value, setValue] = useState<number>(Number(cfg.target ?? 0));
   const [disabledSigns, setDisabledSigns] = useState<Set<string>>(new Set());
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [orderList, setOrderList] = useState<string[]>(() => shuffleArr((cfg.items as string[]) ?? []));
 
   switch (type) {
     case "multiple_choice": {
@@ -843,6 +862,22 @@ function TypeBody({
       );
     }
 
+    case "code_breaker":
+      return (
+        <div className="space-y-2">
+          {cfg.riddle ? <p className="rounded-soft bg-white p-2 text-[13px] text-polder-grey">🧩 {String(cfg.riddle)}</p> : null}
+          <input
+            className="input text-center text-xl font-bold tracking-[8px]"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="code"
+          />
+          <button className="btn btn-purple w-full" disabled={busy} onClick={() => send({ code: text })}>
+            Ontgrendel het slot
+          </button>
+        </div>
+      );
+
     case "compass_point":
       return (
         <button className="btn-demo" disabled={busy} onClick={() => send({ arrived: true })}>
@@ -874,21 +909,27 @@ function TypeBody({
       );
 
     case "ordering": {
-      const items = (cfg.items as string[]) ?? [];
+      function move(i: number, dir: -1 | 1) {
+        const j = i + dir;
+        if (j < 0 || j >= orderList.length) return;
+        const copy = [...orderList];
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+        setOrderList(copy);
+      }
       return (
         <div className="space-y-2">
-          <p className="text-[13px] text-polder-grey">Zet in de juiste volgorde (typ de nummers, bijv. 3,1,2):</p>
-          <ul className="list-disc pl-5 text-sm">
-            {items.map((it, i) => (
-              <li key={i}>{i + 1}. {it}</li>
+          <p className="text-[13px] text-polder-grey">Zet in de juiste volgorde met de pijltjes:</p>
+          <div className="space-y-1.5">
+            {orderList.map((it, i) => (
+              <div key={it + i} className="flex items-center gap-2 rounded-soft border-2 border-polder-line bg-white p-2">
+                <span className="w-5 text-center text-xs font-bold text-polder-grey">{i + 1}</span>
+                <span className="flex-1 text-sm font-semibold">{it}</span>
+                <button className="btn btn-ghost px-2 py-1 text-xs disabled:opacity-30" disabled={i === 0} onClick={() => move(i, -1)}>▲</button>
+                <button className="btn btn-ghost px-2 py-1 text-xs disabled:opacity-30" disabled={i === orderList.length - 1} onClick={() => move(i, 1)}>▼</button>
+              </div>
             ))}
-          </ul>
-          <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="bijv. 3,1,2" />
-          <button
-            className="btn btn-purple w-full"
-            disabled={busy}
-            onClick={() => send({ order: text.split(",").map((s) => s.trim()) })}
-          >
+          </div>
+          <button className="btn btn-purple w-full" disabled={busy} onClick={() => send({ order: orderList })}>
             Volgorde indienen
           </button>
         </div>

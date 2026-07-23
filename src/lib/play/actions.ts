@@ -77,6 +77,17 @@ export async function leaveTeam() {
   redirect("/speel");
 }
 
+/** End an organizer test session: remove the test team and go back to the editor. */
+export async function endTestPlay() {
+  const token = (await cookies()).get(TEAM_COOKIE)?.value;
+  if (token) {
+    const db = createAdminClient();
+    await db.from("teams").delete().eq("session_token", token);
+  }
+  (await cookies()).delete(TEAM_COOKIE);
+  redirect("/ontwerp");
+}
+
 // ── submit an answer ─────────────────────────────────────────────────────────
 export async function submitAnswer(
   assignmentId: string,

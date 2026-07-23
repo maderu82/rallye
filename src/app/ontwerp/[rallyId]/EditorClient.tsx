@@ -7,6 +7,7 @@ import { useEffect, useState, useTransition } from "react";
 import type { Assignment, Leg, Point, Rally } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import type { MapPoint, MapTeam } from "@/components/RallyMap";
+import AssignmentConfig from "./AssignmentConfig";
 
 // Real map is client-only (Leaflet needs window).
 const RallyMap = dynamic(() => import("@/components/RallyMap"), {
@@ -366,6 +367,10 @@ function PointSettings({
           <input defaultValue={point.lng ?? ""} className="input" placeholder="lng" onBlur={(e) => run(() => updatePoint(rallyId, point.id, { lng: e.target.value ? Number(e.target.value) : null }))} />
         </div>
       </div>
+      <div>
+        <label className="field-label">Toelichting bij deze locatie (optioneel)</label>
+        <textarea defaultValue={point.note ?? ""} className="input min-h-[60px]" placeholder="bijv. wat teams hier zien of moeten doen" onBlur={(e) => run(() => updatePoint(rallyId, point.id, { note: e.target.value }))} />
+      </div>
 
       {isSF ? (
         <p className="rounded-soft bg-teal-light p-2.5 text-[13px] text-teal-dark">
@@ -425,6 +430,8 @@ function PointSettings({
                 <input type="checkbox" defaultChecked={point.gps_unlock} className="scale-125 accent-teal" onChange={(e) => run(() => updatePoint(rallyId, point.id, { gps_unlock: e.target.checked }))} />
                 Ontgrendelen via gps-nabijheid
               </label>
+
+              <AssignmentConfig key={assignment.id + assignment.type} rallyId={rallyId} assignment={assignment} run={run} />
             </div>
           ) : (
             <p className="text-[13px] text-polder-grey">Dit punt is alleen een navigatiepunt — teams komen langs zonder opdracht.</p>

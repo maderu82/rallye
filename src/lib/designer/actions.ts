@@ -283,6 +283,8 @@ export async function updateAssignment(
     hint_text: string;
     prompt: string;
     grading: "auto" | "scale" | "manual";
+    public_config: Record<string, unknown>;
+    solution: Record<string, unknown>;
   }>,
 ) {
   const db = await createClient();
