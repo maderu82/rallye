@@ -2,6 +2,7 @@
 
 import type { Assignment } from "@/lib/types";
 import { updateAssignment } from "@/lib/designer/actions";
+import QRImage from "@/components/QRImage";
 
 // Per-building-block configuration: answers, options, penalties, ranges, etc.
 // Writes to public_config (safe for players) and solution (server-only answer key).
@@ -211,12 +212,48 @@ export default function AssignmentConfig({
       );
 
     case "qr_checkpoint":
-    case "qr_search":
       return (
-        <div className="rounded-soft bg-purple-light p-3 text-[13px] text-purple">
-          🔧 QR-code genereren en scannen met de camera komt in de volgende stap. Nu werkt QR nog met test-knoppen in de testmodus.
+        <div className="space-y-2 rounded-soft bg-white p-3">
+          <p className="text-[13px] text-polder-grey">Print deze QR en hang &apos;m op de locatie. Teams scannen &apos;m als bewijs van aanwezigheid.</p>
+          <QRImage value={`RLYCHK:${assignment.id}`} label="Checkpoint" />
         </div>
       );
+
+    case "qr_search": {
+      const signs = (Array.isArray(cfg.signs) && cfg.signs.length ? cfg.signs : ["A", "B", "C"]) as string[];
+      const nextLabel = () => String.fromCharCode(65 + signs.length);
+      return (
+        <div className="space-y-2.5 rounded-soft bg-white p-3">
+          <label className="field-label">Bordjes — kies het juiste; print elke QR en hang ze in het veld</label>
+          {signs.map((s, i) => {
+            const correct = String(sol.correct) === s;
+            return (
+              <div key={i} className={`rounded-soft border-2 p-2 ${correct ? "border-teal bg-teal-light" : "border-polder-line"}`}>
+                <div className="flex items-center gap-2">
+                  <input type="radio" name={`qrcorrect-${pid}`} checked={correct} onChange={() => saveSolution({ correct: s })} className="accent-teal" title="Juiste bordje" />
+                  <input
+                    defaultValue={s}
+                    className="input flex-1"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim() || s;
+                      const copy = signs.map((x, j) => (j === i ? v : x));
+                      savePublic({ signs: copy });
+                      if (correct) saveSolution({ correct: v });
+                    }}
+                  />
+                  <button className="btn btn-danger px-2 text-xs" onClick={() => savePublic({ signs: signs.filter((_, j) => j !== i) })}>✕</button>
+                </div>
+                <div className="mt-2">
+                  <QRImage value={`RLYSIGN:${assignment.id}:${s}`} label={`Bordje ${s}${correct ? " ✓ juist" : ""}`} />
+                </div>
+              </div>
+            );
+          })}
+          <button className="btn btn-ghost w-full text-sm" onClick={() => savePublic({ signs: [...signs, nextLabel()] })}>➕ Bordje toevoegen</button>
+          {wrongPenaltyField}
+        </div>
+      );
+    }
 
     default:
       return null;

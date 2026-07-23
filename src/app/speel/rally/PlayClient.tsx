@@ -6,6 +6,7 @@ import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE } from "@/lib/blocks";
 import { answerEnroute, buyDigit, endTestPlay, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, useHint } from "@/lib/play/actions";
 import { createClient } from "@/lib/supabase/client";
+import QRScanner from "@/components/QRScanner";
 
 // Downscale a captured photo client-side to keep uploads small (<~8 MB action
 // limit) and fast on mobile connections.
@@ -299,6 +300,7 @@ function WaypointView(props: {
           <AssignmentCard
             assignment={assignment}
             done={done}
+            testMode={testMode}
             onScored={onScored}
             toast={toast}
             onComplete={() => onComplete(assignment.id)}
@@ -638,12 +640,14 @@ function GpsUnlock({ point, testMode, onUnlock, toast }: { point: Point; testMod
 function AssignmentCard({
   assignment,
   done,
+  testMode,
   onScored,
   toast,
   onComplete,
 }: {
   assignment: PublicAssignment;
   done: boolean;
+  testMode: boolean;
   onScored: (score: number, badge?: { name: string; icon: string }) => void;
   toast: (m: string) => void;
   onComplete: () => void;
@@ -712,7 +716,7 @@ function AssignmentCard({
       {assignment.prompt ? <p className="mb-2.5 font-bold">{assignment.prompt}</p> : null}
 
       {!done ? (
-        <TypeBody type={assignment.type} cfg={cfg} busy={busy} send={send} sendForm={sendForm} toast={toast} />
+        <TypeBody type={assignment.type} assignmentId={assignment.id} cfg={cfg} busy={busy} testMode={testMode} send={send} sendForm={sendForm} toast={toast} />
       ) : null}
 
       {feedback ? (
@@ -748,15 +752,19 @@ function AssignmentCard({
 // ── per-type interaction ─────────────────────────────────────────────────────
 function TypeBody({
   type,
+  assignmentId,
   cfg,
   busy,
+  testMode,
   send,
   sendForm,
   toast,
 }: {
   type: PublicAssignment["type"];
+  assignmentId: string;
   cfg: Record<string, unknown>;
   busy: boolean;
+  testMode: boolean;
   send: (s: Record<string, unknown>) => Promise<{ ok: boolean }>;
   sendForm: (s: Record<string, unknown>, file?: File | null) => Promise<{ ok: boolean }>;
   toast: (m: string) => void;
@@ -766,6 +774,7 @@ function TypeBody({
   const [disabledSigns, setDisabledSigns] = useState<Set<string>>(new Set());
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [orderList, setOrderList] = useState<string[]>(() => shuffleArr((cfg.items as string[]) ?? []));
+  const [scan, setScan] = useState<null | "checkpoint" | "search">(null);
 
   switch (type) {
     case "multiple_choice": {
@@ -815,28 +824,63 @@ function TypeBody({
 
     case "qr_checkpoint":
       return (
-        <button className="btn-demo" disabled={busy} onClick={() => send({ scanned: true })}>
-          📷 Scan de checkpoint-QR
-        </button>
+        <div className="space-y-2">
+          <button className="btn btn-purple w-full" disabled={busy} onClick={() => setScan("checkpoint")}>
+            📷 Scan de checkpoint-QR
+          </button>
+          {testMode ? (
+            <button className="btn-demo" disabled={busy} onClick={() => send({ scanned: true })}>
+              🧪 Test: checkpoint gescand
+            </button>
+          ) : null}
+          {scan === "checkpoint" ? (
+            <QRScanner
+              onClose={() => setScan(null)}
+              onResult={(data) => {
+                setScan(null);
+                if (data === `RLYCHK:${assignmentId}`) send({ scanned: true });
+                else toast("❌ Dit is niet de juiste checkpoint-QR.");
+              }}
+            />
+          ) : null}
+        </div>
       );
 
     case "qr_search": {
       const signs = (cfg.signs as string[]) ?? ["A", "B", "C"];
       return (
-        <div className="grid grid-cols-3 gap-2">
-          {signs.map((s) => (
-            <button
-              key={s}
-              disabled={busy || disabledSigns.has(s)}
-              className="btn-demo disabled:opacity-40"
-              onClick={async () => {
-                const r = await send({ sign: s });
-                if (!r.ok) setDisabledSigns((d) => new Set(d).add(s));
+        <div className="space-y-2">
+          <button className="btn btn-purple w-full" disabled={busy} onClick={() => setScan("search")}>
+            📷 Scan een bordje
+          </button>
+          {testMode ? (
+            <div className="grid grid-cols-3 gap-2">
+              {signs.map((s) => (
+                <button
+                  key={s}
+                  disabled={busy || disabledSigns.has(s)}
+                  className="btn-demo disabled:opacity-40"
+                  onClick={async () => {
+                    const r = await send({ sign: s });
+                    if (!r.ok) setDisabledSigns((d) => new Set(d).add(s));
+                  }}
+                >
+                  🧪 {s}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {scan === "search" ? (
+            <QRScanner
+              onClose={() => setScan(null)}
+              onResult={(data) => {
+                setScan(null);
+                const m = data.match(/^RLYSIGN:([^:]+):(.+)$/);
+                if (m && m[1] === assignmentId) send({ sign: m[2] });
+                else toast("❌ Dit bordje hoort niet bij deze opdracht.");
               }}
-            >
-              Scan {s}
-            </button>
-          ))}
+            />
+          ) : null}
         </div>
       );
     }
