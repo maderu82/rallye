@@ -13,14 +13,6 @@ import type { BlockType, HintMode, NavMode } from "@/lib/blocks";
 
 type DB = Awaited<ReturnType<typeof createClient>>;
 
-/** Illustrative canvas (x,y) → gps, mirroring the prototype's mapping. */
-function xyToGeo(x: number, y: number) {
-  return {
-    lat: Number((51.9 + (420 - y) * 0.0003).toFixed(6)),
-    lng: Number((4.5 + x * 0.00045).toFixed(6)),
-  };
-}
-
 function genCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let s = "";
@@ -91,7 +83,7 @@ export async function deleteRally(rallyId: string) {
 }
 
 // ── points ───────────────────────────────────────────────────────────────────
-export async function addPoint(rallyId: string, mapX: number, mapY: number) {
+export async function addPoint(rallyId: string, lat: number, lng: number) {
   const db = await createClient();
   await requireUser(db);
 
@@ -115,9 +107,8 @@ export async function addPoint(rallyId: string, mapX: number, mapY: number) {
       name: `Nieuw punt ${waypoints.length}`,
       has_task: false,
       gps_unlock: true,
-      map_x: mapX,
-      map_y: mapY,
-      ...xyToGeo(mapX, mapY),
+      lat,
+      lng,
     })
     .select("id")
     .single();

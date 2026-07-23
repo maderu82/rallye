@@ -1,10 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { Assignment, Leg, Point, Rally } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
+import type { MapPoint, MapTeam } from "@/components/RallyMap";
+
+// Real map is client-only (Leaflet needs window).
+const RallyMap = dynamic(() => import("@/components/RallyMap"), {
+  ssr: false,
+  loading: () => <div className="flex h-[420px] items-center justify-center rounded-xl bg-teal-light text-sm text-teal-dark">Kaart laden…</div>,
+});
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE } from "@/lib/blocks";
 import {
   addPoint,
@@ -64,15 +72,18 @@ export default function EditorClient({
     return String(wp.findIndex((x) => x.id === p.id) + 1);
   }
 
-  function mapClick(e: React.MouseEvent<SVGSVGElement>) {
-    if (!addMode) return;
-    const svg = e.currentTarget;
-    const r = svg.getBoundingClientRect();
-    const x = Math.round(((e.clientX - r.left) / r.width) * 560);
-    const y = Math.round(((e.clientY - r.top) / r.height) * 420);
+  function handleAddPoint(lat: number, lng: number) {
     setAddMode(false);
-    run(() => addPoint(rally.id, x, y));
+    run(() => addPoint(rally.id, lat, lng));
   }
+
+  const mapPoints: MapPoint[] = points.map((p) => ({
+    id: p.id,
+    lat: p.lat,
+    lng: p.lng,
+    label: labelOf(p),
+    kind: p.kind,
+  }));
 
   const selPoint = sel?.kind === "point" ? points.find((p) => p.id === sel.id) : undefined;
   const selLeg = sel?.kind === "leg" ? legs.find((l) => l.id === sel.id) : undefined;
@@ -192,55 +203,24 @@ export default function EditorClient({
 
           {/* map */}
           <div className="card">
-            <h3 className="mb-2.5 text-sm font-bold uppercase tracking-wide text-teal-dark">Kaart — klik een punt of traject</h3>
+            <h3 className="mb-2.5 text-sm font-bold uppercase tracking-wide text-teal-dark">Kaart — klik een punt aan of plaats een nieuw punt</h3>
             <div className="mb-2.5 flex flex-wrap items-center gap-2">
               <button className="btn btn-coral text-sm" onClick={() => setAddMode((v) => !v)}>
-                {addMode ? "✖ Annuleer plaatsen" : "➕ Nieuw punt met gps-locatie"}
+                {addMode ? "✖ Annuleer plaatsen" : "➕ Nieuw punt op de kaart"}
               </button>
-              {addMode ? <span className="chip chip-teal">Klik op de kaart om het punt te plaatsen</span> : null}
+              {addMode ? <span className="chip chip-teal">Klik op de kaart om het punt te plaatsen (gps wordt automatisch ingevuld)</span> : null}
             </div>
-            <svg
-              viewBox="0 0 560 420"
-              onClick={mapClick}
-              className={`w-full rounded-xl ${addMode ? "cursor-crosshair outline outline-2 outline-dashed outline-coral" : ""}`}
-              style={{ background: "#DDF0E7" }}
-            >
-              <path d="M0 300 C120 280 200 330 320 305 C430 285 500 320 560 300 L560 420 L0 420 Z" fill="#BBDFF0" />
-              <path d="M300 0 C310 90 280 160 305 250" stroke="#BBDFF0" strokeWidth="26" fill="none" />
-              <path d="M40 40 L200 30 L210 140 L60 150 Z" fill="#CDEBDC" />
-              <path d="M360 40 L520 55 L505 160 L370 150 Z" fill="#CDEBDC" />
-              <path d={routePath(points)} stroke="#1D9E75" strokeWidth="4" strokeDasharray="9 7" fill="none" />
-              {legs.map((l, i) => {
-                const a = points[i], b = points[i + 1];
-                if (!a || !b) return null;
-                const mx = ((a.map_x ?? 0) + (b.map_x ?? 0)) / 2;
-                const my = ((a.map_y ?? 0) + (b.map_y ?? 0)) / 2;
-                const on = sel?.kind === "leg" && sel.id === l.id;
-                return (
-                  <g key={l.id} className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setSel({ kind: "leg", id: l.id }); }}>
-                    <line x1={a.map_x ?? 0} y1={a.map_y ?? 0} x2={b.map_x ?? 0} y2={b.map_y ?? 0} stroke="transparent" strokeWidth={18} />
-                    <rect x={mx - 11} y={my - 11} width={22} height={22} rx={6} transform={`rotate(45 ${mx} ${my})`} fill={on ? "#D85A30" : "#fff"} stroke={on ? "#fff" : "#1D9E75"} strokeWidth={2.5} />
-                    <text x={mx} y={my + 4} textAnchor="middle" fontSize={11} style={{ pointerEvents: "none" }}>
-                      {l.enroute_enabled ? "❓" : NAV_BY_MODE[l.nav_mode].icon}
-                    </text>
-                  </g>
-                );
-              })}
-              {points.map((p) => {
-                const on = sel?.kind === "point" && sel.id === p.id;
-                const isSF = p.kind !== "waypoint";
-                return (
-                  <g key={p.id} className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setSel({ kind: "point", id: p.id }); }}>
-                    <circle cx={p.map_x ?? 0} cy={p.map_y ?? 0} r={on ? 16 : 13} fill={on || isSF ? "#D85A30" : "#1D9E75"} stroke="#fff" strokeWidth={3} />
-                    <text x={p.map_x ?? 0} y={(p.map_y ?? 0) + 4} textAnchor="middle" fontSize={11} fontWeight="bold" fill="#fff" style={{ pointerEvents: "none" }}>
-                      {labelOf(p)}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-            <div className="mt-3 rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
-              🧪 Illustratieve kaart. Punten die je plaatst krijgen automatisch een (demo-)gps-locatie; deelnemers ontgrendelen opdrachten via echte gps-nabijheid.
+            <RallyMap
+              points={mapPoints}
+              selectedId={sel?.kind === "point" ? sel.id : null}
+              editable
+              addMode={addMode}
+              onAddPoint={handleAddPoint}
+              onSelectPoint={(id) => setSel({ kind: "point", id })}
+              onMovePoint={(id, lat, lng) => run(() => updatePoint(rally.id, id, { lat, lng }))}
+            />
+            <div className="mt-3 rounded-soft bg-teal-light p-2.5 text-[13px] text-teal-dark">
+              🗺️ Echte kaart (OpenStreetMap). Sleep een punt om het te verplaatsen; de gps-locatie wordt automatisch bijgewerkt. Selecteer een traject in de lijst links.
             </div>
           </div>
 
@@ -481,26 +461,15 @@ function LiveView({
     <div className="grid items-start gap-4 lg:grid-cols-[1fr_360px]">
       <div className="card">
         <h3 className="mb-2.5 text-sm font-bold uppercase tracking-wide text-teal-dark">Live kaart — posities van de teams</h3>
-        <svg viewBox="0 0 560 420" className="w-full rounded-xl" style={{ background: "#DDF0E7" }}>
-          <path d="M0 300 C120 280 200 330 320 305 C430 285 500 320 560 300 L560 420 L0 420 Z" fill="#BBDFF0" />
-          <path d="M300 0 C310 90 280 160 305 250" stroke="#BBDFF0" strokeWidth="26" fill="none" />
-          <path d={routePath(points)} stroke="#1D9E75" strokeWidth="4" strokeDasharray="9 7" fill="none" />
-          {points.map((p) => (
-            <g key={p.id}>
-              <circle cx={p.map_x ?? 0} cy={p.map_y ?? 0} r={10} fill={p.kind !== "waypoint" ? "#D85A30" : "#1D9E75"} opacity={0.55} />
-              <text x={p.map_x ?? 0} y={(p.map_y ?? 0) + 4} textAnchor="middle" fontSize={10} fontWeight="bold" fill="#fff">{labelOf(p)}</text>
-            </g>
-          ))}
-          {teams.map((t, i) => {
-            const pos = pathPos(points, Math.min(1, t.current_index / maxIndex));
-            return (
-              <g key={t.id}>
-                <circle cx={pos.x} cy={pos.y} r={9} fill={TEAM_COLORS[i % 4]} stroke="#fff" strokeWidth={2.5} />
-                <text x={pos.x} y={pos.y - 13} textAnchor="middle" fontSize={10} fontWeight="bold" fill="#123B2E">{t.name}</text>
-              </g>
-            );
-          })}
-        </svg>
+        <RallyMap
+          points={points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, label: labelOf(p), kind: p.kind }))}
+          teams={teams
+            .map((t, i): MapTeam | null => {
+              const pos = geoPos(points, Math.min(1, t.current_index / maxIndex));
+              return pos ? { id: t.id, name: t.name, lat: pos[0], lng: pos[1], color: TEAM_COLORS[i % 4] } : null;
+            })
+            .filter((x): x is MapTeam => x !== null)}
+        />
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <div className="rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
             👀 Alleen meekijken · <span className="font-bold text-teal">● live</span> — bijgewerkt zodra teams scoren.
@@ -540,30 +509,30 @@ function LiveView({
 }
 
 // ── geometry helpers ─────────────────────────────────────────────────────────
-function routePath(points: Point[]): string {
-  return points.map((p, i) => `${i ? "L" : "M"}${p.map_x ?? 0} ${p.map_y ?? 0}`).join(" ");
-}
-
-function pathPos(points: Point[], t: number): { x: number; y: number } {
-  const seg: { ax: number; ay: number; bx: number; by: number; len: number }[] = [];
+// Interpolated lat/lng position a fraction t along the route (points with gps).
+function geoPos(points: Point[], t: number): [number, number] | null {
+  const pts = points.filter((p) => p.lat != null && p.lng != null) as (Point & { lat: number; lng: number })[];
+  if (pts.length === 0) return null;
+  if (pts.length === 1) return [pts[0].lat, pts[0].lng];
+  const seg: { a: [number, number]; b: [number, number]; len: number }[] = [];
   let total = 0;
-  for (let i = 0; i < points.length - 1; i++) {
-    const ax = points[i].map_x ?? 0, ay = points[i].map_y ?? 0;
-    const bx = points[i + 1].map_x ?? 0, by = points[i + 1].map_y ?? 0;
-    const len = Math.hypot(bx - ax, by - ay) || 0.001;
-    seg.push({ ax, ay, bx, by, len });
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a: [number, number] = [pts[i].lat, pts[i].lng];
+    const b: [number, number] = [pts[i + 1].lat, pts[i + 1].lng];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-9;
+    seg.push({ a, b, len });
     total += len;
   }
   let d = Math.min(1, Math.max(0, t)) * total;
   for (const s of seg) {
     if (d <= s.len) {
       const f = d / s.len;
-      return { x: s.ax + (s.bx - s.ax) * f, y: s.ay + (s.by - s.ay) * f };
+      return [s.a[0] + (s.b[0] - s.a[0]) * f, s.a[1] + (s.b[1] - s.a[1]) * f];
     }
     d -= s.len;
   }
-  const last = points[points.length - 1];
-  return { x: last?.map_x ?? 0, y: last?.map_y ?? 0 };
+  const last = pts[pts.length - 1];
+  return [last.lat, last.lng];
 }
 
 function legSummary(l: Leg): string {
