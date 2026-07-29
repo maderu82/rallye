@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
-import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE } from "@/lib/blocks";
+import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
 import { answerEnroute, buyDigit, endTestPlay, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, useHint } from "@/lib/play/actions";
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
@@ -396,12 +396,40 @@ function LegNav({
 
       {leg.nav_mode === "compass" ? <LiveCompass target={target} /> : null}
 
-      {leg.nav_mode === "routebook" || leg.nav_mode === "turn" ? (
+      {leg.nav_mode === "routebook" ? (
         <ol className="list-decimal space-y-1 pl-5 text-sm leading-relaxed">
           {(leg.steps ?? "").split("\n").filter(Boolean).map((s, i) => (
             <li key={i}>{s}</li>
           ))}
         </ol>
+      ) : null}
+
+      {leg.nav_mode === "turn" ? (
+        (leg.turn_steps ?? []).length > 0 ? (
+          <div className="space-y-2">
+            {leg.turn_steps.map((s, i) => {
+              const d = ROADBOOK_BY_ID[s.dir] ?? ROADBOOK_BY_ID.straight;
+              return (
+                <div key={i} className="flex items-center gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5">
+                  <span className="text-3xl leading-none">{d.icon}</span>
+                  <div className="flex-1">
+                    <div className="font-bold text-teal-dark">
+                      {s.dist ? `Na ${s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)} km` : `${s.dist} m`}: ` : ""}{d.label}
+                    </div>
+                    {s.note ? <div className="text-[13px] text-polder-grey">{s.note}</div> : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          // fall back to the old free-text steps
+          <ol className="list-decimal space-y-1 pl-5 text-sm leading-relaxed">
+            {(leg.steps ?? "").split("\n").filter(Boolean).map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ol>
+        )
       ) : null}
 
       {leg.nav_mode === "map" ? (

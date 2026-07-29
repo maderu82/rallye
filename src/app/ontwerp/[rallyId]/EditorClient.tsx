@@ -14,7 +14,8 @@ const RallyMap = dynamic(() => import("@/components/RallyMap"), {
   ssr: false,
   loading: () => <div className="flex h-[420px] items-center justify-center rounded-xl bg-teal-light text-sm text-teal-dark">Kaart laden…</div>,
 });
-import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE } from "@/lib/blocks";
+import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS } from "@/lib/blocks";
+import type { RoadbookStep } from "@/lib/types";
 import {
   addPoint,
   deletePoint,
@@ -484,12 +485,14 @@ function LegSettings({
         </div>
       ) : null}
 
-      {leg.nav_mode === "routebook" || leg.nav_mode === "turn" ? (
+      {leg.nav_mode === "routebook" ? (
         <div>
-          <label className="field-label">{leg.nav_mode === "routebook" ? "Routebeschrijving — één stap per regel" : "Bolletje-pijltje — één instructie per regel"}</label>
+          <label className="field-label">Routebeschrijving — één stap per regel</label>
           <textarea defaultValue={leg.steps ?? ""} className="input min-h-[90px]" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { steps: e.target.value }))} />
         </div>
       ) : null}
+
+      {leg.nav_mode === "turn" ? <RoadbookEditor rallyId={rallyId} leg={leg} run={run} /> : null}
 
       {leg.nav_mode === "map" ? (
         <div>
@@ -525,6 +528,55 @@ function LegSettings({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// ── roadbook editor (bolletje-pijltje) ───────────────────────────────────────
+function RoadbookEditor({ rallyId, leg, run }: { rallyId: string; leg: Leg; run: (fn: () => Promise<unknown>) => void }) {
+  const steps: RoadbookStep[] = Array.isArray(leg.turn_steps) ? leg.turn_steps : [];
+  const save = (next: RoadbookStep[]) => run(() => updateLeg(rallyId, leg.id, { turn_steps: next }));
+
+  return (
+    <div className="space-y-2">
+      <label className="field-label">Bolletje-pijltje (roadbook) — stap voor stap</label>
+      {steps.length === 0 ? <p className="text-xs text-polder-grey">Nog geen stappen. Voeg de eerste afslag toe.</p> : null}
+      {steps.map((s, i) => (
+        <div key={i} className="rounded-soft border-2 border-polder-line p-2">
+          <div className="flex items-center gap-2">
+            <span className="w-5 text-center text-xs font-bold text-polder-grey">{i + 1}</span>
+            <input
+              type="number"
+              defaultValue={s.dist}
+              className="input w-20"
+              placeholder="m"
+              onBlur={(e) => save(steps.map((x, j) => (j === i ? { ...x, dist: Number(e.target.value) || 0 } : x)))}
+            />
+            <span className="text-xs text-polder-grey">m</span>
+            <select
+              defaultValue={s.dir}
+              className="input flex-1"
+              onChange={(e) => save(steps.map((x, j) => (j === i ? { ...x, dir: e.target.value } : x)))}
+            >
+              {ROADBOOK_DIRS.map((d) => (
+                <option key={d.id} value={d.id}>{d.icon} {d.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <input
+              defaultValue={s.note}
+              className="input flex-1"
+              placeholder="toelichting (bijv. 'bij de kerk')"
+              onBlur={(e) => save(steps.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))}
+            />
+            <button className="btn btn-ghost px-2 py-1 text-xs disabled:opacity-30" disabled={i === 0} onClick={() => { const c = [...steps]; [c[i - 1], c[i]] = [c[i], c[i - 1]]; save(c); }}>▲</button>
+            <button className="btn btn-ghost px-2 py-1 text-xs disabled:opacity-30" disabled={i === steps.length - 1} onClick={() => { const c = [...steps]; [c[i + 1], c[i]] = [c[i], c[i + 1]]; save(c); }}>▼</button>
+            <button className="btn btn-danger px-2 py-1 text-xs" onClick={() => save(steps.filter((_, j) => j !== i))}>✕</button>
+          </div>
+        </div>
+      ))}
+      <button className="btn btn-ghost w-full text-sm" onClick={() => save([...steps, { dist: 0, dir: "straight", note: "" }])}>➕ Stap toevoegen</button>
     </div>
   );
 }
@@ -678,8 +730,9 @@ function geoPos(points: Point[], t: number): [number, number] | null {
 }
 
 function legSummary(l: Leg): string {
-  if (l.nav_mode === "compass") return l.bearing || l.distance ? `koers ${l.bearing ?? "?"}° · ${l.distance ?? "?"} m` : "koers en afstand nog invullen";
+  if (l.nav_mode === "compass") return "kompas — live koers + afstand";
   if (l.nav_mode === "map") return l.note || "teams volgen de kaartlijn";
+  if (l.nav_mode === "turn") return l.turn_steps?.length ? `roadbook — ${l.turn_steps.length} stap${l.turn_steps.length === 1 ? "" : "pen"}` : "roadbook nog invullen";
   const first = (l.steps ?? "").split("\n").filter(Boolean);
   return first.length ? `${first.length} instructie${first.length === 1 ? "" : "s"} — "${first[0]}"` : "instructies nog invullen";
 }

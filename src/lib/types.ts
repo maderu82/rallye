@@ -61,7 +61,14 @@ export interface Leg {
   enroute_question: string | null;
   enroute_answer: string | null; // server-only; stripped before reaching the browser
   enroute_points: number;
+  turn_steps: RoadbookStep[];
   created_at: string;
+}
+
+export interface RoadbookStep {
+  dist: number;
+  dir: string;
+  note: string;
 }
 
 export interface Team {

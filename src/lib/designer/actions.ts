@@ -350,6 +350,7 @@ export async function updateLeg(
     enroute_question: string;
     enroute_answer: string;
     enroute_points: number;
+    turn_steps: { dist: number; dir: string; note: string }[];
   }>,
 ) {
   const db = await createClient();

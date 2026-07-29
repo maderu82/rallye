@@ -74,6 +74,28 @@ export const NAV_BY_MODE: Record<NavMode, NavDef> = Object.fromEntries(
   NAV_MODES.map((n) => [n.mode, n]),
 ) as Record<NavMode, NavDef>;
 
+// ── roadbook (bolletje-pijltje) directions ──────────────────────────────────
+export interface RoadbookDir {
+  id: string;
+  label: string;
+  icon: string;
+}
+export const ROADBOOK_DIRS: RoadbookDir[] = [
+  { id: "straight", label: "Rechtdoor", icon: "⬆️" },
+  { id: "slight_left", label: "Flauw links", icon: "↖️" },
+  { id: "slight_right", label: "Flauw rechts", icon: "↗️" },
+  { id: "left", label: "Links", icon: "⬅️" },
+  { id: "right", label: "Rechts", icon: "➡️" },
+  { id: "sharp_left", label: "Scherp links", icon: "↙️" },
+  { id: "sharp_right", label: "Scherp rechts", icon: "↘️" },
+  { id: "uturn", label: "Keren", icon: "↩️" },
+  { id: "roundabout", label: "Rotonde", icon: "🔄" },
+  { id: "arrive", label: "Bestemming", icon: "🏁" },
+];
+export const ROADBOOK_BY_ID: Record<string, RoadbookDir> = Object.fromEntries(
+  ROADBOOK_DIRS.map((d) => [d.id, d]),
+);
+
 export type HintMode = "off" | "free" | "cost";
 export const HINT_LABEL: Record<HintMode, string> = {
   off: "Uit",
