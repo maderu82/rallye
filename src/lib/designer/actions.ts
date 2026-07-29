@@ -303,7 +303,8 @@ export async function updateAssignment(
 ) {
   const db = await createClient();
   await requireUser(db);
-  await db.from("assignments").update(fields).eq("point_id", pointId);
+  const { error } = await db.from("assignments").update(fields).eq("point_id", pointId);
+  if (error) throw new Error(error.message);
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 

@@ -46,10 +46,7 @@ create table if not exists public.assignments (
   id            uuid primary key default gen_random_uuid(),
   point_id      uuid not null unique references public.points (id) on delete cascade,
   rally_id      uuid not null references public.rallies (id) on delete cascade,
-  type          text not null check (type in (
-                  'multiple_choice','open_question','observation','code_breaker',
-                  'estimation','ordering','photo_search','qr_checkpoint','qr_search',
-                  'speed_test','compass_point','free_game')),
+  type          text not null,
   grading       text not null default 'auto' check (grading in ('auto','scale','manual')),
   points        int  not null default 10,
   hint_mode     text not null default 'off' check (hint_mode in ('off','free','cost')),
@@ -284,6 +281,10 @@ on conflict (id) do update set public = true;
 -- Drop the nav_mode CHECK so new navigation modes never need a migration
 -- again (idempotent; values are controlled in app code).
 alter table public.legs drop constraint if exists legs_nav_mode_check;
+
+-- Same for the assignment type: drop the CHECK so new building blocks never
+-- need a migration (idempotent; values are controlled in app code).
+alter table public.assignments drop constraint if exists assignments_type_check;
 
 -- ============================================================================
 -- Demo rally "Polderpuzzel rallye" (teamcode RLY-7H2K). Skipped if it exists.

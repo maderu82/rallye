@@ -111,11 +111,11 @@ export default function EditorClient({
         await fn();
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        // Surface DB errors (e.g. a nav_mode not yet allowed by the schema)
-        // instead of silently swallowing them.
+        // Surface DB errors (e.g. a nav_mode / block type not yet allowed by
+        // the schema) instead of silently swallowing them.
         alert(
-          /nav_mode/.test(msg)
-            ? "Deze navigatiewijze bestaat nog niet in de database. Draai de laatste supabase/setup.sql (migratie 0011) en probeer opnieuw."
+          /nav_mode|assignments_type|type_check|check constraint/i.test(msg)
+            ? "Deze optie bestaat nog niet in de database. Draai de laatste supabase/setup.sql en probeer opnieuw."
             : "Er ging iets mis bij het opslaan: " + msg,
         );
       }
