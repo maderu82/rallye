@@ -22,6 +22,7 @@ import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYP
 import type { RoadbookStep } from "@/lib/types";
 import { deriveRoadbook, fetchRoadRoute, roadbookDirsFromGeom } from "@/lib/geo";
 import {
+  addLeg,
   addPoint,
   createRoutePhotoUpload,
   deletePoint,
@@ -260,20 +261,29 @@ export default function EditorClient({
                         </span>
                       </span>
                     </button>
-                    {i < legs.length ? (
-                      <button
-                        onClick={() => setSel({ kind: "leg", id: legs[i].id })}
-                        className={`ml-6 mt-1.5 flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-soft border-2 border-dashed p-2 text-left text-[13px] font-semibold ${
-                          sel?.kind === "leg" && sel.id === legs[i].id ? "border-coral bg-coral-light text-ink" : "border-polder-line text-polder-grey hover:border-teal"
-                        }`}
-                      >
-                        <span className="text-[15px]">{NAV_BY_MODE[legs[i].nav_mode].icon}</span>
-                        <span className="flex-1">
-                          Traject {labelOf(p)} → {labelOf(points[i + 1])}
-                          <small className="block font-normal text-[11px]">{legSummary(legs[i])}</small>
-                        </span>
-                        {legs[i].enroute_enabled ? <span className="rounded-xl bg-purple-light px-2 py-0.5 text-[11px] text-purple">❓</span> : null}
-                      </button>
+                    {i < points.length - 1 ? (
+                      legs[i] ? (
+                        <button
+                          onClick={() => setSel({ kind: "leg", id: legs[i].id })}
+                          className={`ml-6 mt-1.5 flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-soft border-2 border-dashed p-2 text-left text-[13px] font-semibold ${
+                            sel?.kind === "leg" && sel.id === legs[i].id ? "border-coral bg-coral-light text-ink" : "border-polder-line text-polder-grey hover:border-teal"
+                          }`}
+                        >
+                          <span className="text-[15px]">{NAV_BY_MODE[legs[i].nav_mode].icon}</span>
+                          <span className="flex-1">
+                            Traject {labelOf(p)} → {labelOf(points[i + 1])}
+                            <small className="block font-normal text-[11px]">{legSummary(legs[i])}</small>
+                          </span>
+                          {legs[i].enroute_enabled ? <span className="rounded-xl bg-purple-light px-2 py-0.5 text-[11px] text-purple">❓</span> : null}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => run(() => addLeg(rally.id, i))}
+                          className="ml-6 mt-1.5 flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-soft border-2 border-dashed border-coral p-2 text-left text-[13px] font-semibold text-coral hover:bg-coral-light"
+                        >
+                          ➕ Traject {labelOf(p)} → {labelOf(points[i + 1])} toevoegen (navigatie ontbreekt)
+                        </button>
+                      )
                     ) : null}
                   </div>
                 );

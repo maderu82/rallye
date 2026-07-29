@@ -308,6 +308,16 @@ export async function updateAssignment(
 }
 
 // ── legs ──────────────────────────────────────────────────────────────────────
+/** Create a missing leg (traject) at a given position, e.g. the stretch into
+ *  the finish when a rally ended up with fewer legs than gaps. */
+export async function addLeg(rallyId: string, position: number) {
+  const db = await createClient();
+  await requireUser(db);
+  const { error } = await db.from("legs").insert({ rally_id: rallyId, position, nav_mode: "routebook" });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 // ── post-rally review (photos & manual scores) ──────────────────────────────
 /**
  * Set the final awarded points for a reviewed submission. Records an append-only

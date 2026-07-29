@@ -360,8 +360,7 @@ begin
   insert into public.legs (rally_id, position, nav_mode, bearing, distance) values
     (v_rally, 3, 'compass', 214, 350), (v_rally, 4, 'compass', 78, 120);
   insert into public.legs (rally_id, position, nav_mode, note) values
-    (v_rally, 5, 'map', 'Volg de route op de kaart naar café De Molen.'),
-    (v_rally, 6, 'map', 'De finish is binnen in het café — meld je bij de spelleider.');
+    (v_rally, 5, 'map', 'Volg de route op de kaart naar café De Molen — de finish is binnen.');
 
   insert into public.teams (rally_id, name, current_index) values
     (v_rally, 'Team Turbo', 6) returning id into t_turbo;
