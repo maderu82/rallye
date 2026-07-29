@@ -71,6 +71,7 @@ export interface RoadbookStep {
   dist: number;
   dir: string;
   note: string;
+  photo?: string; // public URL of a junction photo (foto-navigatie)
 }
 
 export interface Team {

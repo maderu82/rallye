@@ -347,7 +347,7 @@ function WaypointView(props: {
         <GpsUnlock
           point={point}
           testMode={testMode}
-          hideDistance={leg?.nav_mode === "turn" || leg?.nav_mode === "routebook"}
+          hideDistance={leg != null && ["turn", "routebook", "cryptic", "photo_nav"].includes(leg.nav_mode)}
           onUnlock={() => setUnlocked(true)}
           toast={toast}
         />
@@ -478,6 +478,44 @@ function LegNav({
             ))}
           </ol>
         )
+      ) : null}
+
+      {/* Cryptische route: only the riddle text — no arrow, no distance */}
+      {leg.nav_mode === "cryptic" ? (
+        <ol className="space-y-2">
+          {(leg.turn_steps ?? []).map((s, i) => (
+            <li key={i} className="flex items-start gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple text-xs font-bold text-white">{i + 1}</span>
+              <div className="flex-1 font-semibold text-ink">{s.note || "…"}</div>
+            </li>
+          ))}
+          <li className="flex items-center gap-2 rounded-soft bg-teal-light p-2 text-[13px] text-teal-dark">
+            🕵️ Los de aanwijzingen onderweg op — de opdracht opent zodra je op de bestemming bent.
+          </li>
+        </ol>
+      ) : null}
+
+      {/* Foto-navigatie: junction photos; players recognise the spot */}
+      {leg.nav_mode === "photo_nav" ? (
+        <ol className="space-y-3">
+          {(leg.turn_steps ?? []).map((s, i) => (
+            <li key={i} className="rounded-soft border-2 border-polder-line bg-white p-2.5">
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal text-xs font-bold text-white">{i + 1}</span>
+                {s.note ? <span className="text-[13px] font-semibold text-ink">{s.note}</span> : <span className="text-[13px] text-polder-grey">Herken deze plek onderweg</span>}
+              </div>
+              {s.photo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={s.photo} alt={`Herkenningspunt ${i + 1}`} className="w-full rounded-soft object-cover" />
+              ) : (
+                <div className="rounded-soft bg-paper p-3 text-center text-xs text-polder-grey">Geen foto</div>
+              )}
+            </li>
+          ))}
+          <li className="flex items-center gap-2 rounded-soft bg-teal-light p-2 text-[13px] text-teal-dark">
+            📷 Zoek de plekken op de foto&apos;s — de opdracht opent zodra je op de bestemming bent.
+          </li>
+        </ol>
       ) : null}
 
       {leg.nav_mode === "map" ? (

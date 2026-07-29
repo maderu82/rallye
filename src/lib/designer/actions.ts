@@ -350,7 +350,7 @@ export async function updateLeg(
     enroute_question: string;
     enroute_answer: string;
     enroute_points: number;
-    turn_steps: { dist: number; dir: string; note: string }[];
+    turn_steps: { dist: number; dir: string; note: string; photo?: string }[];
     turn_points: { lat: number; lng: number }[];
     turn_route: [number, number][];
   }>,
@@ -359,4 +359,23 @@ export async function updateLeg(
   await requireUser(db);
   await db.from("legs").update(fields).eq("id", legId);
   revalidatePath(`/ontwerp/${rallyId}`);
+}
+
+// Signed upload URL for a junction photo (foto-navigatie), stored in the public
+// `route-photos` bucket. Only the rally owner may request one.
+export async function createRoutePhotoUpload(
+  rallyId: string,
+): Promise<{ ok: boolean; bucket?: string; path?: string; token?: string; publicUrl?: string; error?: string }> {
+  const db = await createClient();
+  const user = await requireUser(db);
+  const { data: rally } = await db.from("rallies").select("owner_id").eq("id", rallyId).maybeSingle();
+  if (!rally || rally.owner_id !== user.id) return { ok: false, error: "Geen toegang tot deze rally." };
+
+  const admin = createAdminClient();
+  const bucket = "route-photos";
+  const path = `${rallyId}/${crypto.randomUUID()}.jpg`;
+  const { data, error } = await admin.storage.from(bucket).createSignedUploadUrl(path);
+  if (error || !data) return { ok: false, error: "Kon upload niet voorbereiden." };
+  const publicUrl = admin.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  return { ok: true, bucket, path: data.path, token: data.token, publicUrl };
 }

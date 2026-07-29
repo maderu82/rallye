@@ -23,6 +23,7 @@ import type { RoadbookStep } from "@/lib/types";
 import { deriveRoadbook, fetchRoadRoute, roadbookDirsFromGeom } from "@/lib/geo";
 import {
   addPoint,
+  createRoutePhotoUpload,
   deletePoint,
   deleteRally,
   importGpx,
@@ -507,6 +508,10 @@ function LegSettings({
 
       {leg.nav_mode === "turn" ? <RoadbookEditor variant="turn" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
+      {leg.nav_mode === "cryptic" ? <RoadbookEditor variant="cryptic" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
+
+      {leg.nav_mode === "photo_nav" ? <RoadbookEditor variant="photo_nav" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
+
       {leg.nav_mode === "map" ? (
         <div>
           <label className="field-label">Toelichting (optioneel)</label>
@@ -549,8 +554,70 @@ function LegSettings({
 // Direction options offered in the per-point picker (arrive is automatic for the last point).
 const DIR_CHOICES = ROADBOOK_DIRS.filter((d) => d.id !== "arrive");
 
-function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn" }: { rallyId: string; leg: Leg; fromPoint?: Point; toPoint?: Point; run: (fn: () => Promise<unknown>) => void; variant?: "turn" | "routebook" }) {
-  const isRoute = variant === "routebook";
+type RbVariant = "turn" | "routebook" | "cryptic" | "photo_nav";
+
+// Per-variant presentation of the same map-based step composer.
+const RB_CONFIG: Record<RbVariant, {
+  header: string;
+  listLabel: string;
+  showArrow: boolean;
+  arrowPrimary: boolean;
+  showPhoto: boolean;
+  showDist: boolean;
+  notePlaceholder: string;
+  empty: string;
+}> = {
+  turn: {
+    header: "Roadbook — klik de afslagpunten op de kaart, kies per punt de richting",
+    listLabel: "Aanwijzingen (in volgorde)",
+    showArrow: true, arrowPrimary: true, showPhoto: false, showDist: true,
+    notePlaceholder: "toelichting (bijv. 'bij de kerk')",
+    empty: "Nog geen afslagpunten. Zet ze op de kaart — voor elk punt kies je daarna de richting.",
+  },
+  routebook: {
+    header: "Routeboek — klik de punten op de kaart, schrijf per punt de aanwijzing",
+    listLabel: "Aanwijzingen (straatnamen / herkenningspunten)",
+    showArrow: true, arrowPrimary: false, showPhoto: false, showDist: true,
+    notePlaceholder: "aanwijzing, bijv. 'Ga linksaf de Kerkstraat in, volg tot de brug'",
+    empty: "Nog geen punten. Zet ze op de kaart langs de route — voor elk punt schrijf je daarna de aanwijzing.",
+  },
+  cryptic: {
+    header: "Cryptische route — klik de punten op de kaart, schrijf per punt een raadsel",
+    listLabel: "Cryptische aanwijzingen (spelers zien géén pijl of afstand)",
+    showArrow: false, arrowPrimary: false, showPhoto: false, showDist: true,
+    notePlaceholder: "cryptisch, bijv. 'bij het huis met de rode luiken rechtsaf, voorbij de derde brug'",
+    empty: "Nog geen punten. Zet ze op de kaart — voor elk punt schrijf je een cryptische aanwijzing.",
+  },
+  photo_nav: {
+    header: "Foto-navigatie — klik de punten op de kaart, upload per punt een foto",
+    listLabel: "Foto-aanwijzingen (spelers herkennen de plek en bepalen zelf de richting)",
+    showArrow: false, arrowPrimary: false, showPhoto: true, showDist: true,
+    notePlaceholder: "optionele hint bij de foto",
+    empty: "Nog geen punten. Zet ze op de kaart — voor elk punt upload je een foto van het kruispunt.",
+  },
+};
+
+// Downscale an organizer photo before upload to keep route-photos small.
+async function downscaleImg(file: File, maxDim = 1400, quality = 0.8): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", quality));
+    return blob ?? file;
+  } catch {
+    return file;
+  }
+}
+
+function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn" }: { rallyId: string; leg: Leg; fromPoint?: Point; toPoint?: Point; run: (fn: () => Promise<unknown>) => void; variant?: RbVariant }) {
+  const vc = RB_CONFIG[variant];
+  const [uploading, setUploading] = useState<number | null>(null);
   const steps: RoadbookStep[] = Array.isArray(leg.turn_steps) ? leg.turn_steps : [];
   const turnPoints = Array.isArray(leg.turn_points) ? leg.turn_points : [];
 
@@ -570,7 +637,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   // PRESERVING each point's chosen direction/note (only new points get a
   // suggested direction). This is the key: dragging or adding a point never
   // overwrites directions you already set.
-  async function reroute(nextPoints: { lat: number; lng: number }[], perPoint: { dir?: string; note?: string }[]) {
+  async function reroute(nextPoints: { lat: number; lng: number }[], perPoint: { dir?: string; note?: string; photo?: string }[]) {
     const p = [start, ...nextPoints, end].filter(Boolean) as { lat: number; lng: number }[];
     setRouting(true);
     const road = await fetchRoadRoute(p);
@@ -583,13 +650,29 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveStep?.note ?? "" };
       const pd = perPoint[i];
       const suggested = smartDirs?.[i] ?? a.dir;
-      return { dist: a.dist, dir: pd?.dir ?? suggested, note: pd?.note ?? "" };
+      return { dist: a.dist, dir: pd?.dir ?? suggested, note: pd?.note ?? "", ...(pd?.photo ? { photo: pd.photo } : {}) };
     });
     run(() => updateLeg(rallyId, leg.id, { turn_points: nextPoints, turn_steps: merged, turn_route: road?.route ?? [] }));
   }
 
-  // per-point dir/note snapshot from the current steps, for preservation.
-  const curPerPoint = () => turnPoints.map((_, i) => ({ dir: pointSteps[i]?.dir, note: pointSteps[i]?.note }));
+  // per-point dir/note/photo snapshot from the current steps, for preservation.
+  const curPerPoint = () => turnPoints.map((_, i) => ({ dir: pointSteps[i]?.dir, note: pointSteps[i]?.note, photo: pointSteps[i]?.photo }));
+
+  // Upload a junction photo for a step (foto-navigatie) to the public bucket.
+  async function uploadPhoto(i: number, file: File) {
+    setUploading(i);
+    try {
+      const blob = await downscaleImg(file);
+      const prep = await createRoutePhotoUpload(rallyId);
+      if (!prep.ok || !prep.bucket || !prep.path || !prep.token || !prep.publicUrl) return;
+      const supabase = createClient();
+      const { error } = await supabase.storage.from(prep.bucket).uploadToSignedUrl(prep.path, prep.token, blob, { contentType: "image/jpeg" });
+      if (error) return;
+      setStep(i, { photo: prep.publicUrl });
+    } finally {
+      setUploading(null);
+    }
+  }
 
   const addPointAt = (lat: number, lng: number) => void reroute([...turnPoints, { lat, lng }], [...curPerPoint(), {}]);
   const movePointAt = (i: number, lat: number, lng: number) =>
@@ -603,11 +686,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
 
   return (
     <div className="space-y-2">
-      <label className="field-label">
-        {isRoute
-          ? "Routeboek — klik de punten op de kaart, schrijf per punt de aanwijzing"
-          : "Roadbook — klik de afslagpunten op de kaart, kies per punt de richting"}
-      </label>
+      <label className="field-label">{vc.header}</label>
       {!start || !end ? (
         <p className="rounded-soft bg-coral-light p-2 text-xs text-coral">Geef eerst het begin- en eindpunt van dit traject een gps-locatie (op de kaart of via lat/lng).</p>
       ) : (
@@ -633,14 +712,14 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         </>
       )}
 
-      {/* One row per map point: distance (auto) + direction + written instruction */}
+      {/* One row per map point: distance (auto) + direction/photo + instruction */}
       {turnPoints.length > 0 ? (
         <div className="mt-2 space-y-2">
-          <label className="field-label">{isRoute ? "Aanwijzingen (straatnamen / herkenningspunten)" : "Aanwijzingen (in volgorde)"}</label>
+          <label className="field-label">{vc.listLabel}</label>
           {turnPoints.map((_, i) => {
             const s = pointSteps[i];
             const dist = s?.dist ?? 0;
-            const dirPicker = (
+            const dirPicker = vc.showArrow ? (
               <div className="flex flex-wrap gap-1">
                 {DIR_CHOICES.map((d) => {
                   const active = (s?.dir ?? "straight") === d.id;
@@ -657,36 +736,64 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                   );
                 })}
               </div>
-            );
+            ) : null;
             const noteInput = (
               <input
                 defaultValue={s?.note ?? ""}
                 className="input w-full"
-                placeholder={isRoute ? "aanwijzing, bijv. 'Ga linksaf de Kerkstraat in, volg tot de brug'" : "toelichting (bijv. 'bij de kerk')"}
+                placeholder={vc.notePlaceholder}
                 onBlur={(e) => setStep(i, { note: e.target.value })}
               />
             );
+            const photoBlock = vc.showPhoto ? (
+              <div className="mb-1.5">
+                {s?.photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={s.photo} alt={`Kruispunt ${i + 1}`} className="mb-1 max-h-40 w-full rounded-soft object-cover" />
+                ) : null}
+                <label className="btn btn-ghost block cursor-pointer text-center text-sm">
+                  {uploading === i ? "📷 Uploaden…" : s?.photo ? "📷 Foto vervangen" : "📷 Foto uploaden / maken"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={uploading != null}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      if (f) void uploadPhoto(i, f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            ) : null;
             return (
               <div key={i} className="rounded-soft border-2 border-polder-line p-2">
                 <div className="mb-1.5 flex items-center gap-2">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-bold text-white">{i + 1}</span>
-                  <span className="text-xs font-semibold text-polder-grey">
-                    na {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`}:
-                  </span>
+                  {vc.showDist ? (
+                    <span className="text-xs font-semibold text-polder-grey">
+                      na {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`}:
+                    </span>
+                  ) : null}
                   <button className="btn btn-danger ml-auto px-2 py-1 text-xs" onClick={() => deletePointAt(i)}>✕ punt</button>
                 </div>
-                {isRoute ? (
-                  <>
-                    {noteInput}
-                    <div className="mt-1.5">
-                      <span className="mb-1 block text-[11px] font-semibold text-polder-grey">Richting (optionele pijl bij de aanwijzing)</span>
-                      {dirPicker}
-                    </div>
-                  </>
-                ) : (
+                {photoBlock}
+                {vc.arrowPrimary ? (
                   <>
                     {dirPicker}
                     <div className="mt-1.5">{noteInput}</div>
+                  </>
+                ) : (
+                  <>
+                    {noteInput}
+                    {dirPicker ? (
+                      <div className="mt-1.5">
+                        <span className="mb-1 block text-[11px] font-semibold text-polder-grey">Richting (optionele pijl bij de aanwijzing)</span>
+                        {dirPicker}
+                      </div>
+                    ) : null}
                   </>
                 )}
               </div>
@@ -700,11 +807,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
           ) : null}
         </div>
       ) : start && end ? (
-        <p className="text-xs text-polder-grey">
-          {isRoute
-            ? "Nog geen punten. Zet ze op de kaart langs de route — voor elk punt schrijf je daarna de aanwijzing."
-            : "Nog geen afslagpunten. Zet ze op de kaart — voor elk punt kies je daarna de richting."}
-        </p>
+        <p className="text-xs text-polder-grey">{vc.empty}</p>
       ) : null}
     </div>
   );
@@ -864,6 +967,8 @@ function legSummary(l: Leg): string {
   if (l.nav_mode === "compass") return "kompas — live koers + afstand";
   if (l.nav_mode === "map") return l.note || "teams volgen de kaartlijn";
   if (l.nav_mode === "turn") return l.turn_steps?.length ? `roadbook — ${l.turn_steps.length} stap${l.turn_steps.length === 1 ? "" : "pen"}` : "roadbook nog invullen";
+  if (l.nav_mode === "cryptic") return l.turn_steps?.length ? `cryptische route — ${l.turn_steps.length} raadsel${l.turn_steps.length === 1 ? "" : "s"}` : "cryptische route nog invullen";
+  if (l.nav_mode === "photo_nav") return l.turn_steps?.length ? `foto-navigatie — ${l.turn_steps.length} foto${l.turn_steps.length === 1 ? "" : "'s"}` : "foto-navigatie nog invullen";
   if (l.nav_mode === "routebook" && l.turn_steps?.length) return `routeboek — ${l.turn_steps.length} aanwijzing${l.turn_steps.length === 1 ? "" : "en"}`;
   const first = (l.steps ?? "").split("\n").filter(Boolean);
   return first.length ? `${first.length} instructie${first.length === 1 ? "" : "s"} — "${first[0]}"` : "instructies nog invullen";
