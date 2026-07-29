@@ -107,17 +107,20 @@ export default function EditorClient({
 
   function run(fn: () => Promise<unknown>) {
     start(async () => {
-      try {
-        await fn();
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        // Surface DB errors (e.g. a nav_mode / block type not yet allowed by
-        // the schema) instead of silently swallowing them.
+      const report = (msg: string) =>
         alert(
-          /nav_mode|assignments_type|type_check|check constraint/i.test(msg)
+          /nav_mode|assignments_type|type_check|check constraint|violates/i.test(msg)
             ? "Deze optie bestaat nog niet in de database. Draai de laatste supabase/setup.sql en probeer opnieuw."
             : "Er ging iets mis bij het opslaan: " + msg,
         );
+      try {
+        const res = await fn();
+        // actions may RETURN { error } (real DB message, unmasked in prod)
+        if (res && typeof res === "object" && "error" in res && (res as { error?: string }).error) {
+          report(String((res as { error?: string }).error));
+        }
+      } catch (e) {
+        report(e instanceof Error ? e.message : String(e));
       }
       router.refresh();
     });
@@ -185,8 +188,14 @@ export default function EditorClient({
             📡 Teams volgen
           </button>
         </div>
-        <form action={startTestPlay.bind(null, rally.id)}>
-          <button className="btn btn-purple" type="submit" title="Speel de rally zelf om te testen (met hulpknoppen)">▶️ Test als speler</button>
+        <form action={startTestPlay.bind(null, rally.id)} className="flex items-center gap-1">
+          <select name="fromStep" defaultValue="0" className="input px-2 py-2 text-sm" title="Vanaf welk punt wil je testen?">
+            {points.filter((p) => p.kind === "waypoint").map((p, i) => (
+              <option key={p.id} value={i}>Vanaf {p.name}</option>
+            ))}
+            <option value={points.filter((p) => p.kind === "waypoint").length}>Vanaf de finish</option>
+          </select>
+          <button className="btn btn-purple" type="submit" title="Speel de rally zelf om te testen (met hulpknoppen)">▶️ Test</button>
         </form>
         <button
           className={`btn ${rally.published ? "btn-ghost" : "btn-coral"}`}

@@ -99,11 +99,13 @@ export async function deleteRally(rallyId: string) {
 
 /** Start a test play session (organizer only) — opens the player app in test
  * mode, where the "simulate location reached" helper is available. */
-export async function startTestPlay(rallyId: string) {
+export async function startTestPlay(rallyId: string, formData?: FormData) {
   const db = await createClient();
   const user = await requireUser(db);
   const { data: rally } = await db.from("rallies").select("id,owner_id").eq("id", rallyId).maybeSingle();
   if (!rally || rally.owner_id !== user.id) throw new Error("Geen toegang.");
+
+  const fromStep = Math.max(0, Math.round(Number(formData?.get("fromStep") ?? 0)) || 0);
 
   const admin = createAdminClient();
   const { data: team } = await admin
@@ -120,7 +122,7 @@ export async function startTestPlay(rallyId: string) {
     maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });
-  redirect("/speel/rally?test=1");
+  redirect(`/speel/rally?test=1&from=${fromStep}`);
 }
 
 // ── points ───────────────────────────────────────────────────────────────────
@@ -304,7 +306,9 @@ export async function updateAssignment(
   const db = await createClient();
   await requireUser(db);
   const { error } = await db.from("assignments").update(fields).eq("point_id", pointId);
-  if (error) throw new Error(error.message);
+  // Return (don't throw) so the real DB message reaches the client — thrown
+  // server-action errors are masked in production builds.
+  if (error) return { error: error.message };
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
@@ -380,7 +384,7 @@ export async function updateLeg(
   const db = await createClient();
   await requireUser(db);
   const { error } = await db.from("legs").update(fields).eq("id", legId);
-  if (error) throw new Error(error.message);
+  if (error) return { error: error.message };
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 

@@ -62,10 +62,12 @@ export default function PlayClient({
   state,
   leaderboard,
   testMode = false,
+  startStep,
 }: {
   state: PlayState;
   leaderboard: LeaderboardRow[];
   testMode?: boolean;
+  startStep?: number;
 }) {
   const waypoints = useMemo(
     () => state.points.filter((p) => p.kind === "waypoint").sort((a, b) => a.position - b.position),
@@ -95,6 +97,8 @@ export default function PlayClient({
   const [completed, setCompleted] = useState<Set<string>>(initialCompleted);
   const [score, setScore] = useState(state.score);
   const [step, setStep] = useState(() => {
+    // test mode: the organizer can jump straight to a chosen waypoint
+    if (testMode && startStep != null) return Math.max(0, Math.min(startStep, waypoints.length));
     // resume at the first not-yet-completed waypoint
     const idx = waypoints.findIndex((w) => {
       const a = assignmentByPoint.get(w.id);
