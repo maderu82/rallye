@@ -63,6 +63,7 @@ export interface Leg {
   enroute_points: number;
   turn_steps: RoadbookStep[];
   turn_points: { lat: number; lng: number }[];
+  turn_route: [number, number][];
   created_at: string;
 }
 

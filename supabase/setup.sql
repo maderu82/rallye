@@ -76,6 +76,7 @@ create table if not exists public.legs (
   enroute_points   int not null default 10,
   turn_steps       jsonb not null default '[]'::jsonb,
   turn_points      jsonb not null default '[]'::jsonb,
+  turn_route       jsonb not null default '[]'::jsonb,
   created_at       timestamptz not null default now(),
   unique (rally_id, position)
 );
@@ -83,6 +84,7 @@ create table if not exists public.legs (
 alter table public.legs add column if not exists enroute_answer text;
 alter table public.legs add column if not exists turn_steps jsonb not null default '[]'::jsonb;
 alter table public.legs add column if not exists turn_points jsonb not null default '[]'::jsonb;
+alter table public.legs add column if not exists turn_route jsonb not null default '[]'::jsonb;
 
 -- ─── teams ───────────────────────────────────────────────────────────────────
 create table if not exists public.teams (

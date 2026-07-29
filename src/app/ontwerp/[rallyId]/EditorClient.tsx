@@ -20,7 +20,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { deriveRoadbook } from "@/lib/geo";
+import { deriveRoadbook, fetchRoadRoute } from "@/lib/geo";
 import {
   addPoint,
   deletePoint,
@@ -562,11 +562,16 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: st
   // live derived directions for the arrows on the map
   const derivedDirs = deriveRoadbook(path).map((s) => s.dir).slice(0, turnPoints.length);
   const [addMode, setAddMode] = useState(false);
+  const [routing, setRouting] = useState(false);
 
-  function saveTurnPoints(next: { lat: number; lng: number }[]) {
+  // Snap the route to the roads (OSRM), draw it, and use real road distances.
+  async function saveTurnPoints(next: { lat: number; lng: number }[]) {
     const p = [start, ...next, end].filter(Boolean) as { lat: number; lng: number }[];
-    const derived = deriveRoadbook(p, steps.map((s) => s.note));
-    run(() => updateLeg(rallyId, leg.id, { turn_points: next, turn_steps: derived }));
+    setRouting(true);
+    const road = await fetchRoadRoute(p);
+    setRouting(false);
+    const derived = deriveRoadbook(p, steps.map((s) => s.note), road?.legs);
+    run(() => updateLeg(rallyId, leg.id, { turn_points: next, turn_steps: derived, turn_route: road?.route ?? [] }));
   }
 
   return (
@@ -576,21 +581,24 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: st
         <p className="rounded-soft bg-coral-light p-2 text-xs text-coral">Geef eerst het begin- en eindpunt van dit traject een gps-locatie (op de kaart of via lat/lng).</p>
       ) : (
         <>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button className="btn btn-coral text-sm" onClick={() => setAddMode((v) => !v)}>
               {addMode ? "✖ Klaar met plaatsen" : "➕ Afslagpunt plaatsen"}
             </button>
+            <button className="btn btn-ghost text-sm" onClick={() => void saveTurnPoints(turnPoints)}>🛣️ Route langs wegen bijwerken</button>
+            {routing ? <span className="text-xs text-polder-grey">🛣️ route berekenen…</span> : null}
           </div>
           <RoadbookMap
             start={start}
             end={end}
             turnPoints={turnPoints}
             dirs={derivedDirs}
+            route={leg.turn_route}
             addMode={addMode}
-            onAddPoint={(lat, lng) => saveTurnPoints([...turnPoints, { lat, lng }])}
-            onMovePoint={(i, lat, lng) => saveTurnPoints(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)))}
+            onAddPoint={(lat, lng) => void saveTurnPoints([...turnPoints, { lat, lng }])}
+            onMovePoint={(i, lat, lng) => void saveTurnPoints(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)))}
           />
-          <p className="text-xs text-polder-grey">De route (paars), pijlen en afstanden worden automatisch berekend. Sleep een punt om het te verschuiven.</p>
+          <p className="text-xs text-polder-grey">De route wordt <b>langs de wegen</b> getekend (paars) met pijlen en echte weg-afstanden. Sleep een punt om het te verschuiven.</p>
         </>
       )}
 

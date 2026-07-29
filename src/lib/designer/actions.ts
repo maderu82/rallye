@@ -352,6 +352,7 @@ export async function updateLeg(
     enroute_points: number;
     turn_steps: { dist: number; dir: string; note: string }[];
     turn_points: { lat: number; lng: number }[];
+    turn_route: [number, number][];
   }>,
 ) {
   const db = await createClient();

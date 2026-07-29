@@ -12,6 +12,7 @@ export interface RoadbookMapProps {
   end: { lat: number; lng: number } | null;
   turnPoints: { lat: number; lng: number }[];
   dirs: string[]; // derived direction id per turn point (for the arrow icon)
+  route?: [number, number][]; // road-snapped geometry; falls back to straight lines
   addMode: boolean;
   height?: number;
   onAddPoint: (lat: number, lng: number) => void;
@@ -43,6 +44,7 @@ export default function RoadbookMap({
   end,
   turnPoints,
   dirs,
+  route,
   addMode,
   height = 340,
   onAddPoint,
@@ -86,8 +88,10 @@ export default function RoadbookMap({
     for (const t of turnPoints) path.push([t.lat, t.lng]);
     if (end) path.push([end.lat, end.lng]);
 
-    if (path.length >= 2) {
-      L.polyline(path, { color: "#534AB7", weight: 4, opacity: 0.9 }).addTo(layer);
+    // Prefer the road-snapped geometry; otherwise draw straight lines.
+    const line = route && route.length >= 2 ? route : path;
+    if (line.length >= 2) {
+      L.polyline(line, { color: "#534AB7", weight: 5, opacity: 0.9 }).addTo(layer);
     }
     if (start) L.marker([start.lat, start.lng], { icon: endIcon("S", "#1D9E75") }).addTo(layer);
     if (end) L.marker([end.lat, end.lng], { icon: endIcon("E", "#D85A30") }).addTo(layer);
@@ -100,11 +104,11 @@ export default function RoadbookMap({
       });
     });
 
-    if (!fittedRef.current && path.length > 0) {
-      map.fitBounds(L.latLngBounds(path).pad(0.4), { maxZoom: 16 });
+    if (!fittedRef.current && line.length > 0) {
+      map.fitBounds(L.latLngBounds(line).pad(0.4), { maxZoom: 16 });
       fittedRef.current = true;
     }
-  }, [start, end, turnPoints, dirs, onMovePoint]);
+  }, [start, end, turnPoints, dirs, route, onMovePoint]);
 
   return <div ref={containerRef} style={{ height, width: "100%", borderRadius: 12, zIndex: 0 }} />;
 }

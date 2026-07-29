@@ -12,6 +12,31 @@ export function haversine(a: LL, b: LL): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+/**
+ * Snap a set of waypoints to the road network via the public OSRM server.
+ * Returns the road geometry (as [lat,lng] pairs) and the per-leg road distance.
+ * Returns null on any failure — callers fall back to straight lines.
+ */
+export async function fetchRoadRoute(
+  waypoints: LL[],
+): Promise<{ route: [number, number][]; legs: number[] } | null> {
+  if (waypoints.length < 2) return null;
+  try {
+    const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(";");
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const r = data.routes?.[0];
+    if (!r) return null;
+    const route = (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
+    const legs = (r.legs as { distance: number }[]).map((l) => Math.round(l.distance));
+    return { route, legs };
+  } catch {
+    return null;
+  }
+}
+
 /** Bearing 0..360 (0 = north) from a to b. */
 export function bearing(a: LL, b: LL): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -45,10 +70,10 @@ export interface DerivedStep {
  * and the turn direction there (the final vertex = "arrive"). Notes are kept by
  * index from prevNotes where possible.
  */
-export function deriveRoadbook(path: LL[], prevNotes: string[] = []): DerivedStep[] {
+export function deriveRoadbook(path: LL[], prevNotes: string[] = [], legDistances?: number[]): DerivedStep[] {
   const steps: DerivedStep[] = [];
   for (let i = 1; i < path.length; i++) {
-    const dist = Math.round(haversine(path[i - 1], path[i]));
+    const dist = legDistances?.[i - 1] != null ? Math.round(legDistances[i - 1]) : Math.round(haversine(path[i - 1], path[i]));
     let dir: string;
     if (i === path.length - 1) {
       dir = "arrive";
