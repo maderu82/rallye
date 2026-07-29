@@ -230,6 +230,21 @@ export default function AssignmentConfig({
         </div>
       );
 
+    case "game_master":
+      return (
+        <div className="space-y-2 rounded-soft bg-white p-3">
+          <div>
+            <label className="field-label">Spelleiderscode (geef je aan de spelleider)</label>
+            <input defaultValue={str(sol.code)} className="input" placeholder="bijv. BRUG-2024" onBlur={(e) => saveSolution({ code: e.target.value })} />
+          </div>
+          <div>
+            <label className="field-label">Maximaal aantal punten</label>
+            <input type="number" min={0} defaultValue={num(cfg.max, assignment.points)} className="input" onBlur={(e) => savePublic({ max: num(e.target.value, assignment.points) })} />
+          </div>
+          <p className="text-[13px] text-polder-grey">De spelleider voert op de locatie deze code + het verdiende aantal punten in. Zonder de juiste code worden geen punten toegekend.</p>
+        </div>
+      );
+
     case "qr_checkpoint":
       return (
         <div className="space-y-2 rounded-soft bg-white p-3">

@@ -521,6 +521,33 @@ function LegNav({
   );
 }
 
+// ── game master: enters a secret code + the points earned on location ────────
+function GameMasterInput({
+  cfg,
+  busy,
+  send,
+}: {
+  cfg: Record<string, unknown>;
+  busy: boolean;
+  send: (s: Record<string, unknown>) => Promise<{ ok: boolean }>;
+}) {
+  const max = Number(cfg.max ?? 0);
+  const [code, setCode] = useState("");
+  const [pts, setPts] = useState<number>(0);
+  return (
+    <div className="space-y-2">
+      <p className="rounded-soft bg-teal-light p-2 text-[13px] text-teal-dark">🧑‍⚖️ Geef het toestel aan de spelleider — die vult de code en de punten in.</p>
+      <label className="field-label">Spelleiderscode</label>
+      <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="code van de spelleider" autoCapitalize="characters" />
+      <label className="field-label">Punten{max ? ` (0–${max})` : ""}</label>
+      <input type="number" min={0} max={max || undefined} className="input" value={pts} onChange={(e) => setPts(Number(e.target.value))} />
+      <button className="btn btn-purple w-full" disabled={busy || !code.trim()} onClick={() => send({ code: code.trim(), points: pts })}>
+        {busy ? "Bezig…" : "Punten toekennen"}
+      </button>
+    </div>
+  );
+}
+
 // ── foto-navigatie: one photo at a time; confirm arrival within 100 m ────────
 const PHOTO_GEOFENCE_M = 100;
 
@@ -1394,6 +1421,9 @@ function TypeBody({
           <p className="text-[11px] text-polder-grey">Maximaal {Number(cfg.maxSec) > 0 ? Number(cfg.maxSec) : MAX_VIDEO_SEC} seconden. Neem direct op of kies een filmpje uit je galerij. De organisator bekijkt het na afloop.</p>
         </div>
       );
+
+    case "game_master":
+      return <GameMasterInput cfg={cfg} busy={busy} send={send} />;
 
     case "free_game": {
       const max = Number(cfg.max ?? 15);

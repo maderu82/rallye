@@ -173,6 +173,22 @@ export function grade(
       };
     }
 
+    case "game_master": {
+      // A game master enters a secret code + the points earned. The code gates
+      // scoring so teams can't award themselves points.
+      const code = normalize(sol.code);
+      const given = normalize(submission.code);
+      if (!code) {
+        return { complete: false, delta: 0, ok: false, feedback: "⚠️ Er is nog geen spelleiderscode ingesteld.", kind: "assignment" };
+      }
+      if (given !== code) {
+        return { complete: false, delta: 0, ok: false, feedback: "❌ Onjuiste spelleiderscode.", kind: "assignment" };
+      }
+      const max = num(cfg.max, a.points);
+      const pts = Math.max(0, Math.min(max, Math.round(num(submission.points))));
+      return { complete: true, delta: pts, ok: true, feedback: `✅ Spelleider kende ${pts} punten toe.`, kind: "manual" };
+    }
+
     case "free_game": {
       // MANUAL: team/host enters a score, clamped to [0, max].
       const max = num(cfg.max, a.points);
