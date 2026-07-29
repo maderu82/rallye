@@ -551,95 +551,135 @@ function LegSettings({
 }
 
 // ── roadbook editor (bolletje-pijltje): draw on map + steps ──────────────────
+// Direction options offered in the per-point picker (arrive is automatic for the last point).
+const DIR_CHOICES = ROADBOOK_DIRS.filter((d) => d.id !== "arrive");
+
 function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: string; leg: Leg; fromPoint?: Point; toPoint?: Point; run: (fn: () => Promise<unknown>) => void }) {
   const steps: RoadbookStep[] = Array.isArray(leg.turn_steps) ? leg.turn_steps : [];
   const turnPoints = Array.isArray(leg.turn_points) ? leg.turn_points : [];
-  const save = (next: RoadbookStep[]) => run(() => updateLeg(rallyId, leg.id, { turn_steps: next }));
 
   const start = fromPoint?.lat != null && fromPoint?.lng != null ? { lat: fromPoint.lat, lng: fromPoint.lng } : null;
   const end = toPoint?.lat != null && toPoint?.lng != null ? { lat: toPoint.lat, lng: toPoint.lng } : null;
-  const path = [start, ...turnPoints, end].filter(Boolean) as { lat: number; lng: number }[];
-  // live derived directions for the arrows on the map
-  const derivedDirs = deriveRoadbook(path).map((s) => s.dir).slice(0, turnPoints.length);
-  const [addMode, setAddMode] = useState(false);
+  const [addMode, setAddMode] = useState(true);
   const [routing, setRouting] = useState(false);
 
-  // Snap the route to the roads (OSRM), draw it, and use real road distances.
-  async function saveTurnPoints(next: { lat: number; lng: number }[]) {
-    const p = [start, ...next, end].filter(Boolean) as { lat: number; lng: number }[];
+  // Steps aligned to the turn points (one per point). The final "arrive" step
+  // (at the destination) is stored last but not shown as an editable point.
+  const pointSteps = steps.slice(0, turnPoints.length);
+  const arriveStep = steps.length > turnPoints.length ? steps[steps.length - 1] : null;
+  // Arrows drawn on the map reflect the *chosen* directions (not re-derived).
+  const mapDirs = turnPoints.map((_, i) => pointSteps[i]?.dir ?? "straight");
+
+  // Recompute the road route + distances for a new set of points, while
+  // PRESERVING each point's chosen direction/note (only new points get a
+  // suggested direction). This is the key: dragging or adding a point never
+  // overwrites directions you already set.
+  async function reroute(nextPoints: { lat: number; lng: number }[], perPoint: { dir?: string; note?: string }[]) {
+    const p = [start, ...nextPoints, end].filter(Boolean) as { lat: number; lng: number }[];
     setRouting(true);
     const road = await fetchRoadRoute(p);
     setRouting(false);
-    const derived = deriveRoadbook(p, steps.map((s) => s.note), road?.legs);
-    run(() => updateLeg(rallyId, leg.id, { turn_points: next, turn_steps: derived, turn_route: road?.route ?? [] }));
+    const auto = deriveRoadbook(p, [], road?.legs); // nextPoints.length + 1 entries (last = arrive)
+    const merged: RoadbookStep[] = auto.map((a, i) => {
+      if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveStep?.note ?? "" };
+      const pd = perPoint[i];
+      return { dist: a.dist, dir: pd?.dir ?? a.dir, note: pd?.note ?? "" };
+    });
+    run(() => updateLeg(rallyId, leg.id, { turn_points: nextPoints, turn_steps: merged, turn_route: road?.route ?? [] }));
   }
+
+  // per-point dir/note snapshot from the current steps, for preservation.
+  const curPerPoint = () => turnPoints.map((_, i) => ({ dir: pointSteps[i]?.dir, note: pointSteps[i]?.note }));
+
+  const addPointAt = (lat: number, lng: number) => void reroute([...turnPoints, { lat, lng }], [...curPerPoint(), {}]);
+  const movePointAt = (i: number, lat: number, lng: number) =>
+    void reroute(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)), curPerPoint());
+  const deletePointAt = (i: number) =>
+    void reroute(turnPoints.filter((_, j) => j !== i), curPerPoint().filter((_, j) => j !== i));
+
+  // Setting a direction / note doesn't move anything, so just save the steps.
+  const setStep = (i: number, patch: Partial<RoadbookStep>) =>
+    run(() => updateLeg(rallyId, leg.id, { turn_steps: steps.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
 
   return (
     <div className="space-y-2">
-      <label className="field-label">Roadbook op de kaart — klik de afslagpunten tussen start en eind</label>
+      <label className="field-label">Roadbook — klik de afslagpunten op de kaart, kies per punt de richting</label>
       {!start || !end ? (
         <p className="rounded-soft bg-coral-light p-2 text-xs text-coral">Geef eerst het begin- en eindpunt van dit traject een gps-locatie (op de kaart of via lat/lng).</p>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn btn-coral text-sm" onClick={() => setAddMode((v) => !v)}>
-              {addMode ? "✖ Klaar met plaatsen" : "➕ Afslagpunt plaatsen"}
+            <button className={`btn text-sm ${addMode ? "btn-coral" : "btn-ghost"}`} onClick={() => setAddMode((v) => !v)}>
+              {addMode ? "📍 Klikken staat aan — klik op de kaart" : "➕ Afslagpunten klikken"}
             </button>
-            <button className="btn btn-ghost text-sm" onClick={() => void saveTurnPoints(turnPoints)}>🛣️ Route langs wegen bijwerken</button>
+            <button className="btn btn-ghost text-sm" onClick={() => void reroute(turnPoints, curPerPoint())}>🛣️ Route bijwerken</button>
             {routing ? <span className="text-xs text-polder-grey">🛣️ route berekenen…</span> : null}
           </div>
           <RoadbookMap
             start={start}
             end={end}
             turnPoints={turnPoints}
-            dirs={derivedDirs}
+            dirs={mapDirs}
             route={leg.turn_route}
             addMode={addMode}
-            onAddPoint={(lat, lng) => void saveTurnPoints([...turnPoints, { lat, lng }])}
-            onMovePoint={(i, lat, lng) => void saveTurnPoints(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)))}
+            onAddPoint={addPointAt}
+            onMovePoint={movePointAt}
           />
-          <p className="text-xs text-polder-grey">De route wordt <b>langs de wegen</b> getekend (paars) met pijlen en echte weg-afstanden. Sleep een punt om het te verschuiven.</p>
+          <p className="text-xs text-polder-grey">De route loopt <b>langs de wegen</b> (paars); afstanden zijn echte weg-afstanden. Sleep een punt om het te verschuiven. Deze kaart zien alleen jij — spelers krijgen alleen het routeboek.</p>
         </>
       )}
 
-      <label className="field-label mt-2">Stappen (automatisch berekend — pas gerust aan)</label>
-      {steps.length === 0 ? <p className="text-xs text-polder-grey">Nog geen stappen. Teken de route op de kaart of voeg handmatig een stap toe.</p> : null}
-      {steps.map((s, i) => (
-        <div key={i} className="rounded-soft border-2 border-polder-line p-2">
-          <div className="flex items-center gap-2">
-            <span className="w-5 text-center text-xs font-bold text-polder-grey">{i + 1}</span>
-            <input
-              type="number"
-              defaultValue={s.dist}
-              className="input w-20"
-              placeholder="m"
-              onBlur={(e) => save(steps.map((x, j) => (j === i ? { ...x, dist: Number(e.target.value) || 0 } : x)))}
-            />
-            <span className="text-xs text-polder-grey">m</span>
-            <select
-              defaultValue={s.dir}
-              className="input flex-1"
-              onChange={(e) => save(steps.map((x, j) => (j === i ? { ...x, dir: e.target.value } : x)))}
-            >
-              {ROADBOOK_DIRS.map((d) => (
-                <option key={d.id} value={d.id}>{d.icon} {d.label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <input
-              defaultValue={s.note}
-              className="input flex-1"
-              placeholder="toelichting (bijv. 'bij de kerk')"
-              onBlur={(e) => save(steps.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))}
-            />
-            <button className="btn btn-ghost px-2 py-1 text-xs disabled:opacity-30" disabled={i === 0} onClick={() => { const c = [...steps]; [c[i - 1], c[i]] = [c[i], c[i - 1]]; save(c); }}>▲</button>
-            <button className="btn btn-ghost px-2 py-1 text-xs disabled:opacity-30" disabled={i === steps.length - 1} onClick={() => { const c = [...steps]; [c[i + 1], c[i]] = [c[i], c[i + 1]]; save(c); }}>▼</button>
-            <button className="btn btn-danger px-2 py-1 text-xs" onClick={() => save(steps.filter((_, j) => j !== i))}>✕</button>
-          </div>
+      {/* One row per map point: distance (auto) + a direction picker you tap */}
+      {turnPoints.length > 0 ? (
+        <div className="mt-2 space-y-2">
+          <label className="field-label">Aanwijzingen (in volgorde)</label>
+          {turnPoints.map((_, i) => {
+            const s = pointSteps[i];
+            const dist = s?.dist ?? 0;
+            return (
+              <div key={i} className="rounded-soft border-2 border-polder-line p-2">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-bold text-white">{i + 1}</span>
+                  <span className="text-xs font-semibold text-polder-grey">
+                    na {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`}:
+                  </span>
+                  <button className="btn btn-danger ml-auto px-2 py-1 text-xs" onClick={() => deletePointAt(i)}>✕ punt</button>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {DIR_CHOICES.map((d) => {
+                    const active = (s?.dir ?? "straight") === d.id;
+                    return (
+                      <button
+                        key={d.id}
+                        title={d.label}
+                        onClick={() => setStep(i, { dir: d.id })}
+                        className={`flex items-center gap-1 rounded-soft border-2 px-2 py-1 text-sm ${active ? "border-[#534AB7] bg-[#534AB7]/10 font-bold" : "border-polder-line"}`}
+                      >
+                        <span className="text-base leading-none">{d.icon}</span>
+                        <span className="hidden sm:inline">{d.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <input
+                  defaultValue={s?.note ?? ""}
+                  className="input mt-1.5 w-full"
+                  placeholder="toelichting (bijv. 'bij de kerk')"
+                  onBlur={(e) => setStep(i, { note: e.target.value })}
+                />
+              </div>
+            );
+          })}
+          {arriveStep ? (
+            <div className="flex items-center gap-2 rounded-soft bg-teal-light p-2 text-sm text-teal-dark">
+              <span className="text-lg">🏁</span>
+              <span>na {arriveStep.dist >= 1000 ? `${(arriveStep.dist / 1000).toFixed(1)} km` : `${arriveStep.dist} m`}: aankomst op de bestemming</span>
+            </div>
+          ) : null}
         </div>
-      ))}
-      <button className="btn btn-ghost w-full text-sm" onClick={() => save([...steps, { dist: 0, dir: "straight", note: "" }])}>➕ Stap toevoegen</button>
+      ) : start && end ? (
+        <p className="text-xs text-polder-grey">Nog geen afslagpunten. Zet ze op de kaart — voor elk punt kies je daarna de richting.</p>
+      ) : null}
     </div>
   );
 }
