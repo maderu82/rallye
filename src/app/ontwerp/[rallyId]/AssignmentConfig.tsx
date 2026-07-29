@@ -211,6 +211,25 @@ export default function AssignmentConfig({
         </div>
       );
 
+    case "video_task":
+      return (
+        <div className="space-y-2 rounded-soft bg-white p-3">
+          <label className="field-label">Maximale lengte van het filmpje</label>
+          <select
+            defaultValue={String(num(cfg.maxSec, 10))}
+            className="input"
+            onChange={(e) => savePublic({ maxSec: num(e.target.value, 10) })}
+          >
+            <option value="10">10 seconden</option>
+            <option value="15">15 seconden</option>
+            <option value="20">20 seconden</option>
+            <option value="30">30 seconden</option>
+            <option value="60">60 seconden</option>
+          </select>
+          <p className="text-[13px] text-polder-grey">Langere filmpjes worden geweigerd vóór het uploaden. Houd het kort zodat uploads klein blijven.</p>
+        </div>
+      );
+
     case "qr_checkpoint":
       return (
         <div className="space-y-2 rounded-soft bg-white p-3">

@@ -886,10 +886,11 @@ function AssignmentCard({
   // Upload a video straight to Storage (signed URL) — bypasses the action size
   // limit — then record + grade it.
   async function sendVideo(file: File) {
-    // Reject clips longer than the max (small tolerance for recorder overshoot).
+    // Reject clips longer than the configured max (tolerance for recorder overshoot).
+    const maxSec = Number(cfg.maxSec) > 0 ? Number(cfg.maxSec) : MAX_VIDEO_SEC;
     const dur = await videoDuration(file);
-    if (dur > MAX_VIDEO_SEC + 1) {
-      toast(`🎥 Filmpje is te lang (${Math.round(dur)}s). Maximaal ${MAX_VIDEO_SEC} seconden — neem een korter filmpje op.`);
+    if (dur > maxSec + 1) {
+      toast(`🎥 Filmpje is te lang (${Math.round(dur)}s). Maximaal ${maxSec} seconden — neem een korter filmpje op.`);
       return;
     }
     const m = file.name.match(/\.([a-z0-9]+)$/i);
@@ -1225,7 +1226,7 @@ function TypeBody({
               }}
             />
           </label>
-          <p className="text-[11px] text-polder-grey">Maximaal {MAX_VIDEO_SEC} seconden. Neem direct op of kies een filmpje uit je galerij. De organisator bekijkt het na afloop.</p>
+          <p className="text-[11px] text-polder-grey">Maximaal {Number(cfg.maxSec) > 0 ? Number(cfg.maxSec) : MAX_VIDEO_SEC} seconden. Neem direct op of kies een filmpje uit je galerij. De organisator bekijkt het na afloop.</p>
         </div>
       );
 
