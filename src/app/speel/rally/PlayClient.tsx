@@ -427,11 +427,38 @@ function LegNav({
   onEnrouteAnswered: () => void;
 }) {
   const nav = NAV_BY_MODE[leg.nav_mode];
+
+  // Let teams tick off roadbook steps they've passed (a memory aid, per device).
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`legcheck:${leg.id}`);
+      if (raw) setChecked(new Set(JSON.parse(raw) as number[]));
+    } catch {}
+  }, [leg.id]);
+  const toggle = (i: number) =>
+    setChecked((prev) => {
+      const n = new Set(prev);
+      if (n.has(i)) n.delete(i);
+      else n.add(i);
+      try {
+        localStorage.setItem(`legcheck:${leg.id}`, JSON.stringify([...n]));
+      } catch {}
+      return n;
+    });
+  const checkDot = (i: number) => (
+    <span className={`ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold ${checked.has(i) ? "border-teal bg-teal text-white" : "border-polder-line text-transparent"}`}>✓</span>
+  );
+
   return (
     <div className="card mb-3.5 border-l-4 border-teal">
       <h3 className="mb-2 text-base font-bold text-teal-dark">
         {nav.icon} {nav.label.split(" (")[0]}
       </h3>
+
+      {["turn", "routebook", "cryptic"].includes(leg.nav_mode) && (leg.turn_steps ?? []).length > 0 ? (
+        <p className="mb-2 text-[11px] text-polder-grey">Tik een stap aan om &apos;m af te vinken zodra je &apos;m gepasseerd bent.</p>
+      ) : null}
 
       {leg.nav_mode === "compass" ? <LiveCompass target={target} /> : null}
 
@@ -442,15 +469,16 @@ function LegNav({
               const d = ROADBOOK_BY_ID[s.dir] ?? ROADBOOK_BY_ID.straight;
               const last = i === leg.turn_steps.length - 1;
               return (
-                <li key={i} className="flex items-start gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5">
+                <li key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-start gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5 ${checked.has(i) ? "opacity-60" : ""}`}>
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal text-xs font-bold text-white">{i + 1}</span>
                   <div className="flex-1">
-                    <div className="font-semibold text-ink">{s.note || (last ? "Je bent op de bestemming" : d.label)}</div>
+                    <div className={`font-semibold text-ink ${checked.has(i) ? "line-through" : ""}`}>{s.note || (last ? "Je bent op de bestemming" : d.label)}</div>
                     <div className="text-[13px] text-polder-grey">
                       <span className="mr-1">{d.icon}</span>
                       na {s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)} km` : `${s.dist} m`}
                     </div>
                   </div>
+                  {checkDot(i)}
                 </li>
               );
             })}
@@ -470,14 +498,15 @@ function LegNav({
             {leg.turn_steps.map((s, i) => {
               const d = ROADBOOK_BY_ID[s.dir] ?? ROADBOOK_BY_ID.straight;
               return (
-                <div key={i} className="flex items-center gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5">
+                <div key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-center gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5 ${checked.has(i) ? "opacity-60" : ""}`}>
                   <span className="text-3xl leading-none">{d.icon}</span>
                   <div className="flex-1">
-                    <div className="font-bold text-teal-dark">
+                    <div className={`font-bold text-teal-dark ${checked.has(i) ? "line-through" : ""}`}>
                       {s.dist ? `Na ${s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)} km` : `${s.dist} m`}: ` : ""}{d.label}
                     </div>
                     {s.note ? <div className="text-[13px] text-polder-grey">{s.note}</div> : null}
                   </div>
+                  {checkDot(i)}
                 </div>
               );
             })}
@@ -496,9 +525,10 @@ function LegNav({
       {leg.nav_mode === "cryptic" ? (
         <ol className="space-y-2">
           {(leg.turn_steps ?? []).map((s, i) => (
-            <li key={i} className="flex items-start gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5">
+            <li key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-start gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5 ${checked.has(i) ? "opacity-60" : ""}`}>
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple text-xs font-bold text-white">{i + 1}</span>
-              <div className="flex-1 font-semibold text-ink">{s.note || "…"}</div>
+              <div className={`flex-1 font-semibold text-ink ${checked.has(i) ? "line-through" : ""}`}>{s.note || "…"}</div>
+              {checkDot(i)}
             </li>
           ))}
           <li className="flex items-center gap-2 rounded-soft bg-teal-light p-2 text-[13px] text-teal-dark">
