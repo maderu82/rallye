@@ -8,6 +8,27 @@ import { answerEnroute, buyDigit, createMediaUploadUrl, endTestPlay, finishRally
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
 
+// Max length for a video-opdracht: keeps uploads small (fits a default bucket).
+const MAX_VIDEO_SEC = 10;
+
+// Read a video file's duration (seconds) from its metadata; 0 if unreadable.
+function videoDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(v.duration) ? v.duration : 0);
+    };
+    v.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(0);
+    };
+    v.src = url;
+  });
+}
+
 // Downscale a captured photo client-side to keep uploads small (<~8 MB action
 // limit) and fast on mobile connections.
 async function downscale(file: File, maxDim = 1600, quality = 0.8): Promise<Blob> {
@@ -865,6 +886,12 @@ function AssignmentCard({
   // Upload a video straight to Storage (signed URL) — bypasses the action size
   // limit — then record + grade it.
   async function sendVideo(file: File) {
+    // Reject clips longer than the max (small tolerance for recorder overshoot).
+    const dur = await videoDuration(file);
+    if (dur > MAX_VIDEO_SEC + 1) {
+      toast(`🎥 Filmpje is te lang (${Math.round(dur)}s). Maximaal ${MAX_VIDEO_SEC} seconden — neem een korter filmpje op.`);
+      return;
+    }
     const m = file.name.match(/\.([a-z0-9]+)$/i);
     const ext = m ? m[1].toLowerCase() : file.type.includes("webm") ? "webm" : file.type.includes("quicktime") ? "mov" : "mp4";
     setBusy(true);
@@ -1198,7 +1225,7 @@ function TypeBody({
               }}
             />
           </label>
-          <p className="text-[11px] text-polder-grey">Neem direct op of kies een filmpje uit je galerij. De organisator bekijkt het na afloop.</p>
+          <p className="text-[11px] text-polder-grey">Maximaal {MAX_VIDEO_SEC} seconden. Neem direct op of kies een filmpje uit je galerij. De organisator bekijkt het na afloop.</p>
         </div>
       );
 
