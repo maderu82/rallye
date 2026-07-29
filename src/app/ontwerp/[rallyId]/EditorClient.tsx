@@ -503,14 +503,9 @@ function LegSettings({
         </div>
       ) : null}
 
-      {leg.nav_mode === "routebook" ? (
-        <div>
-          <label className="field-label">Routebeschrijving — één stap per regel</label>
-          <textarea defaultValue={leg.steps ?? ""} className="input min-h-[90px]" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { steps: e.target.value }))} />
-        </div>
-      ) : null}
+      {leg.nav_mode === "routebook" ? <RoadbookEditor variant="routebook" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
-      {leg.nav_mode === "turn" ? <RoadbookEditor rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
+      {leg.nav_mode === "turn" ? <RoadbookEditor variant="turn" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
       {leg.nav_mode === "map" ? (
         <div>
@@ -554,7 +549,8 @@ function LegSettings({
 // Direction options offered in the per-point picker (arrive is automatic for the last point).
 const DIR_CHOICES = ROADBOOK_DIRS.filter((d) => d.id !== "arrive");
 
-function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: string; leg: Leg; fromPoint?: Point; toPoint?: Point; run: (fn: () => Promise<unknown>) => void }) {
+function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn" }: { rallyId: string; leg: Leg; fromPoint?: Point; toPoint?: Point; run: (fn: () => Promise<unknown>) => void; variant?: "turn" | "routebook" }) {
+  const isRoute = variant === "routebook";
   const steps: RoadbookStep[] = Array.isArray(leg.turn_steps) ? leg.turn_steps : [];
   const turnPoints = Array.isArray(leg.turn_points) ? leg.turn_points : [];
 
@@ -607,7 +603,11 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: st
 
   return (
     <div className="space-y-2">
-      <label className="field-label">Roadbook — klik de afslagpunten op de kaart, kies per punt de richting</label>
+      <label className="field-label">
+        {isRoute
+          ? "Routeboek — klik de punten op de kaart, schrijf per punt de aanwijzing"
+          : "Roadbook — klik de afslagpunten op de kaart, kies per punt de richting"}
+      </label>
       {!start || !end ? (
         <p className="rounded-soft bg-coral-light p-2 text-xs text-coral">Geef eerst het begin- en eindpunt van dit traject een gps-locatie (op de kaart of via lat/lng).</p>
       ) : (
@@ -633,13 +633,39 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: st
         </>
       )}
 
-      {/* One row per map point: distance (auto) + a direction picker you tap */}
+      {/* One row per map point: distance (auto) + direction + written instruction */}
       {turnPoints.length > 0 ? (
         <div className="mt-2 space-y-2">
-          <label className="field-label">Aanwijzingen (in volgorde)</label>
+          <label className="field-label">{isRoute ? "Aanwijzingen (straatnamen / herkenningspunten)" : "Aanwijzingen (in volgorde)"}</label>
           {turnPoints.map((_, i) => {
             const s = pointSteps[i];
             const dist = s?.dist ?? 0;
+            const dirPicker = (
+              <div className="flex flex-wrap gap-1">
+                {DIR_CHOICES.map((d) => {
+                  const active = (s?.dir ?? "straight") === d.id;
+                  return (
+                    <button
+                      key={d.id}
+                      title={d.label}
+                      onClick={() => setStep(i, { dir: d.id })}
+                      className={`flex items-center gap-1 rounded-soft border-2 px-2 py-1 text-sm ${active ? "border-[#534AB7] bg-[#534AB7]/10 font-bold" : "border-polder-line"}`}
+                    >
+                      <span className="text-base leading-none">{d.icon}</span>
+                      <span className="hidden sm:inline">{d.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+            const noteInput = (
+              <input
+                defaultValue={s?.note ?? ""}
+                className="input w-full"
+                placeholder={isRoute ? "aanwijzing, bijv. 'Ga linksaf de Kerkstraat in, volg tot de brug'" : "toelichting (bijv. 'bij de kerk')"}
+                onBlur={(e) => setStep(i, { note: e.target.value })}
+              />
+            );
             return (
               <div key={i} className="rounded-soft border-2 border-polder-line p-2">
                 <div className="mb-1.5 flex items-center gap-2">
@@ -649,28 +675,20 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: st
                   </span>
                   <button className="btn btn-danger ml-auto px-2 py-1 text-xs" onClick={() => deletePointAt(i)}>✕ punt</button>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {DIR_CHOICES.map((d) => {
-                    const active = (s?.dir ?? "straight") === d.id;
-                    return (
-                      <button
-                        key={d.id}
-                        title={d.label}
-                        onClick={() => setStep(i, { dir: d.id })}
-                        className={`flex items-center gap-1 rounded-soft border-2 px-2 py-1 text-sm ${active ? "border-[#534AB7] bg-[#534AB7]/10 font-bold" : "border-polder-line"}`}
-                      >
-                        <span className="text-base leading-none">{d.icon}</span>
-                        <span className="hidden sm:inline">{d.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <input
-                  defaultValue={s?.note ?? ""}
-                  className="input mt-1.5 w-full"
-                  placeholder="toelichting (bijv. 'bij de kerk')"
-                  onBlur={(e) => setStep(i, { note: e.target.value })}
-                />
+                {isRoute ? (
+                  <>
+                    {noteInput}
+                    <div className="mt-1.5">
+                      <span className="mb-1 block text-[11px] font-semibold text-polder-grey">Richting (optionele pijl bij de aanwijzing)</span>
+                      {dirPicker}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {dirPicker}
+                    <div className="mt-1.5">{noteInput}</div>
+                  </>
+                )}
               </div>
             );
           })}
@@ -682,7 +700,11 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: st
           ) : null}
         </div>
       ) : start && end ? (
-        <p className="text-xs text-polder-grey">Nog geen afslagpunten. Zet ze op de kaart — voor elk punt kies je daarna de richting.</p>
+        <p className="text-xs text-polder-grey">
+          {isRoute
+            ? "Nog geen punten. Zet ze op de kaart langs de route — voor elk punt schrijf je daarna de aanwijzing."
+            : "Nog geen afslagpunten. Zet ze op de kaart — voor elk punt kies je daarna de richting."}
+        </p>
       ) : null}
     </div>
   );
@@ -842,6 +864,7 @@ function legSummary(l: Leg): string {
   if (l.nav_mode === "compass") return "kompas — live koers + afstand";
   if (l.nav_mode === "map") return l.note || "teams volgen de kaartlijn";
   if (l.nav_mode === "turn") return l.turn_steps?.length ? `roadbook — ${l.turn_steps.length} stap${l.turn_steps.length === 1 ? "" : "pen"}` : "roadbook nog invullen";
+  if (l.nav_mode === "routebook" && l.turn_steps?.length) return `routeboek — ${l.turn_steps.length} aanwijzing${l.turn_steps.length === 1 ? "" : "en"}`;
   const first = (l.steps ?? "").split("\n").filter(Boolean);
   return first.length ? `${first.length} instructie${first.length === 1 ? "" : "s"} — "${first[0]}"` : "instructies nog invullen";
 }

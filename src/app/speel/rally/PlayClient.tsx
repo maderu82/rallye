@@ -424,11 +424,32 @@ function LegNav({
       {leg.nav_mode === "compass" ? <LiveCompass target={target} /> : null}
 
       {leg.nav_mode === "routebook" ? (
-        <ol className="list-decimal space-y-1 pl-5 text-sm leading-relaxed">
-          {(leg.steps ?? "").split("\n").filter(Boolean).map((s, i) => (
-            <li key={i}>{s}</li>
-          ))}
-        </ol>
+        (leg.turn_steps ?? []).length > 0 ? (
+          <ol className="space-y-2">
+            {leg.turn_steps.map((s, i) => {
+              const d = ROADBOOK_BY_ID[s.dir] ?? ROADBOOK_BY_ID.straight;
+              const last = i === leg.turn_steps.length - 1;
+              return (
+                <li key={i} className="flex items-start gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal text-xs font-bold text-white">{i + 1}</span>
+                  <div className="flex-1">
+                    <div className="font-semibold text-ink">{s.note || (last ? "Je bent op de bestemming" : d.label)}</div>
+                    <div className="text-[13px] text-polder-grey">
+                      <span className="mr-1">{d.icon}</span>
+                      na {s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)} km` : `${s.dist} m`}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        ) : (
+          <ol className="list-decimal space-y-1 pl-5 text-sm leading-relaxed">
+            {(leg.steps ?? "").split("\n").filter(Boolean).map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ol>
+        )
       ) : null}
 
       {leg.nav_mode === "turn" ? (
