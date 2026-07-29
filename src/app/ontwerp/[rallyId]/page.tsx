@@ -3,8 +3,17 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Assignment, Leg, Point, Team, TeamEvent } from "@/lib/types";
 import EditorClient from "./EditorClient";
+import { haversine } from "@/lib/geo";
 
 export const dynamic = "force-dynamic";
+
+export type LegSpeed = {
+  from: string;
+  to: string;
+  kmh: number;
+  limit: number;
+  over: boolean;
+};
 
 export type ActivityItem = {
   label: string;
@@ -98,6 +107,51 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
     });
   }
 
+  // ── speed monitoring: estimated average speed per team, per leg ────────────
+  // time(point) ≈ first event at that point; distance = drawn road distance
+  // when available, else straight-line. Both make the estimate conservative
+  // (it includes dwell time / underestimates distance), so a flag is reliable.
+  const orderedPoints = ((points ?? []) as Point[]).slice().sort((a, b) => a.position - b.position);
+  const legByPos = new Map(((legs ?? []) as Leg[]).map((l) => [l.position, l]));
+  const rallyLimit = (rally as { speed_limit: number | null }).speed_limit;
+
+  function legDistanceM(leg: Leg | undefined, a: Point, b: Point): number | null {
+    const steps = Array.isArray(leg?.turn_steps) ? leg!.turn_steps : [];
+    const road = steps.reduce((s, st) => s + (Number(st.dist) || 0), 0);
+    if (road > 0) return road;
+    if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
+      return haversine({ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng });
+    }
+    return null;
+  }
+
+  const teamSpeeds: Record<string, LegSpeed[]> = {};
+  for (const t of (teams ?? []) as Team[]) {
+    // earliest event timestamp per point for this team
+    const arrival = new Map<string, number>();
+    for (const e of evts) {
+      if (e.team_id !== t.id || !e.point_id) continue;
+      const ms = new Date(e.created_at).getTime();
+      if (!arrival.has(e.point_id) || ms < arrival.get(e.point_id)!) arrival.set(e.point_id, ms);
+    }
+    const list: LegSpeed[] = [];
+    for (let i = 0; i < orderedPoints.length - 1; i++) {
+      const a = orderedPoints[i];
+      const b = orderedPoints[i + 1];
+      const leg = legByPos.get(a.position);
+      const limit = leg?.speed_limit ?? rallyLimit;
+      if (limit == null || limit <= 0) continue; // monitoring off for this leg
+      const ta = arrival.get(a.id);
+      const tb = arrival.get(b.id);
+      if (ta == null || tb == null || tb <= ta) continue;
+      const distM = legDistanceM(leg, a, b);
+      if (distM == null || distM <= 0) continue;
+      const kmh = (distM / ((tb - ta) / 1000)) * 3.6;
+      list.push({ from: a.name, to: b.name, kmh: Math.round(kmh), limit, over: kmh > limit });
+    }
+    if (list.length) teamSpeeds[t.id] = list;
+  }
+
   return (
     <EditorClient
       rally={rally}
@@ -106,6 +160,7 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
       assignments={(assignments ?? []) as Assignment[]}
       liveTeams={liveTeams}
       teamActivity={teamActivity}
+      teamSpeeds={teamSpeeds}
     />
   );
 }

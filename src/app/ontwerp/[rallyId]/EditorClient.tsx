@@ -35,6 +35,7 @@ import {
   updateAssignment,
   updateLeg,
   updatePoint,
+  updateRallySpeedLimit,
 } from "@/lib/designer/actions";
 import { logout } from "@/lib/auth/actions";
 
@@ -77,6 +78,7 @@ type LiveTeam = {
   created_at: string;
 };
 type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; isVideo: boolean; when: string };
+type LegSpeed = { from: string; to: string; kmh: number; limit: number; over: boolean };
 type Sel = { kind: "point" | "leg"; id: string } | null;
 
 export default function EditorClient({
@@ -86,6 +88,7 @@ export default function EditorClient({
   assignments,
   liveTeams,
   teamActivity,
+  teamSpeeds,
 }: {
   rally: Rally;
   points: Point[];
@@ -93,6 +96,7 @@ export default function EditorClient({
   assignments: Assignment[];
   liveTeams: LiveTeam[];
   teamActivity: Record<string, ActivityItem[]>;
+  teamSpeeds: Record<string, LegSpeed[]>;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -340,7 +344,7 @@ export default function EditorClient({
           </div>
         </div>
       ) : (
-        <LiveView rallyId={rally.id} points={points} teams={liveTeams} activity={teamActivity} labelOf={labelOf} onRefresh={() => router.refresh()} />
+        <LiveView rallyId={rally.id} points={points} teams={liveTeams} activity={teamActivity} speeds={teamSpeeds} defaultLimit={rally.speed_limit} onSetLimit={(v) => run(() => updateRallySpeedLimit(rally.id, v))} labelOf={labelOf} onRefresh={() => router.refresh()} />
       )}
     </main>
   );
@@ -529,6 +533,22 @@ function LegSettings({
           <input defaultValue={leg.note ?? ""} className="input" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { note: e.target.value }))} />
         </div>
       ) : null}
+
+      <div>
+        <label className="field-label">Snelheidswaarschuwing dit traject (km/u)</label>
+        <input
+          type="number"
+          min={0}
+          defaultValue={leg.speed_limit ?? ""}
+          className="input"
+          placeholder="leeg = rally-standaard gebruiken"
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            run(() => updateLeg(rallyId, leg.id, { speed_limit: v === "" ? null : Number(v) }));
+          }}
+        />
+        <p className="mt-1 text-xs text-polder-grey">Boven deze gemiddelde snelheid krijgt het team in de live-view een ⚠️. Laat leeg om de rally-standaard te gebruiken, of 0 om dit traject niet te controleren.</p>
+      </div>
 
       <label className="flex items-center gap-2.5 text-sm font-semibold">
         <input type="checkbox" defaultChecked={leg.enroute_enabled} className="scale-125 accent-teal" onChange={(e) => run(() => updateLeg(rallyId, leg.id, { enroute_enabled: e.target.checked }))} />
@@ -832,6 +852,9 @@ function LiveView({
   points,
   teams,
   activity,
+  speeds,
+  defaultLimit,
+  onSetLimit,
   labelOf,
   onRefresh,
 }: {
@@ -839,6 +862,9 @@ function LiveView({
   points: Point[];
   teams: LiveTeam[];
   activity: Record<string, ActivityItem[]>;
+  speeds: Record<string, LegSpeed[]>;
+  defaultLimit: number | null;
+  onSetLimit: (v: number | null) => void;
   labelOf: (p: Point) => string;
   onRefresh: () => void;
 }) {
@@ -875,7 +901,22 @@ function LiveView({
           <div className="rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
             👀 Alleen meekijken · <span className="font-bold text-teal">● live</span> — bijgewerkt zodra teams scoren.
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 rounded-soft bg-paper px-2 py-1 text-xs text-polder-grey" title="Standaard snelheidswaarschuwing voor alle trajecten; per traject te overschrijven.">
+              ⚠️ Grens
+              <input
+                type="number"
+                min={0}
+                defaultValue={defaultLimit ?? ""}
+                placeholder="uit"
+                className="input w-16 px-1.5 py-0.5 text-center text-xs"
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  onSetLimit(v === "" ? null : Number(v));
+                }}
+              />
+              km/u
+            </label>
             <Link href={`/ontwerp/${rallyId}/review`} className="btn btn-ghost text-sm">🔎 Nakijken</Link>
             <button className="btn btn-ghost text-sm" onClick={onRefresh}>🔄 Ververs</button>
           </div>
@@ -888,13 +929,16 @@ function LiveView({
           <div className="space-y-2">
             {teams.map((t, i) => {
               const items = activity[t.id] ?? [];
+              const legSpeeds = speeds[t.id] ?? [];
+              const speeding = legSpeeds.filter((s) => s.over);
               const open = openTeam === t.id;
               return (
-                <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${t.finished ? "border-coral" : "border-teal"}`}>
+                <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${speeding.length ? "border-[#D85A30]" : t.finished ? "border-coral" : "border-teal"}`}>
                   <button className="w-full text-left" onClick={() => setOpenTeam(open ? null : t.id)}>
                     <div className="flex items-center gap-2 font-bold">
                       <span className="inline-block h-3 w-3 rounded-full" style={{ background: TEAM_COLORS[i % 4] }} />
                       {t.name}
+                      {speeding.length ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]">⚠️ {speeding.length}×</span> : null}
                       <span className="ml-auto text-teal-dark">{t.score} ptn</span>
                       <span className="text-xs text-polder-grey">{open ? "▲" : "▼"}</span>
                     </div>
@@ -908,6 +952,21 @@ function LiveView({
 
                   {open ? (
                     <div className="mt-2.5 space-y-2 border-t border-polder-line pt-2.5">
+                      {legSpeeds.length ? (
+                        <div className="rounded-soft bg-paper p-2">
+                          <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-polder-grey">Gemiddelde snelheid per traject (schatting)</div>
+                          <div className="space-y-1">
+                            {legSpeeds.map((s, k) => (
+                              <div key={k} className={`flex items-center gap-2 text-[13px] ${s.over ? "font-bold text-[#D85A30]" : "text-polder-grey"}`}>
+                                <span className="flex-1 truncate">{s.from} → {s.to}</span>
+                                <span>{s.kmh} km/u</span>
+                                <span className="text-[11px]">{s.over ? `⚠️ > ${s.limit}` : `≤ ${s.limit}`}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="mt-1 text-[10px] text-polder-grey">Schatting incl. stoptijd bij opdrachten — dus eerder te laag dan te hoog.</p>
+                        </div>
+                      ) : null}
                       {items.length === 0 ? (
                         <p className="text-xs text-polder-grey">Nog geen antwoorden.</p>
                       ) : (

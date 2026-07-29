@@ -14,9 +14,11 @@ create table if not exists public.rallies (
   name        text not null,
   join_code   text not null unique,
   published   boolean not null default false,
+  speed_limit int,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+alter table public.rallies add column if not exists speed_limit int;
 
 -- ─── points ─────────────────────────────────────────────────────────────────
 create table if not exists public.points (
@@ -77,6 +79,7 @@ create table if not exists public.legs (
   turn_steps       jsonb not null default '[]'::jsonb,
   turn_points      jsonb not null default '[]'::jsonb,
   turn_route       jsonb not null default '[]'::jsonb,
+  speed_limit      int,
   created_at       timestamptz not null default now(),
   unique (rally_id, position)
 );
@@ -85,6 +88,7 @@ alter table public.legs add column if not exists enroute_answer text;
 alter table public.legs add column if not exists turn_steps jsonb not null default '[]'::jsonb;
 alter table public.legs add column if not exists turn_points jsonb not null default '[]'::jsonb;
 alter table public.legs add column if not exists turn_route jsonb not null default '[]'::jsonb;
+alter table public.legs add column if not exists speed_limit int;
 
 -- ─── teams ───────────────────────────────────────────────────────────────────
 create table if not exists public.teams (

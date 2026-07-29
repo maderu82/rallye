@@ -82,6 +82,14 @@ export async function togglePublish(rallyId: string, published: boolean) {
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+export async function updateRallySpeedLimit(rallyId: string, speedLimit: number | null) {
+  const db = await createClient();
+  await requireUser(db);
+  const { error } = await db.from("rallies").update({ speed_limit: speedLimit }).eq("id", rallyId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 export async function deleteRally(rallyId: string) {
   const db = await createClient();
   await requireUser(db);
@@ -353,6 +361,7 @@ export async function updateLeg(
     turn_steps: { dist: number; dir: string; note: string; photo?: string }[];
     turn_points: { lat: number; lng: number }[];
     turn_route: [number, number][];
+    speed_limit: number | null;
   }>,
 ) {
   const db = await createClient();

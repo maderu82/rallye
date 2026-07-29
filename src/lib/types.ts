@@ -8,6 +8,7 @@ export interface Rally {
   name: string;
   join_code: string;
   published: boolean;
+  speed_limit: number | null; // rally-wide default speed warning threshold (km/h)
   created_at: string;
   updated_at: string;
 }
@@ -64,6 +65,7 @@ export interface Leg {
   turn_steps: RoadbookStep[];
   turn_points: { lat: number; lng: number }[];
   turn_route: [number, number][];
+  speed_limit: number | null; // per-leg speed warning threshold (km/h); null = use rally default
   created_at: string;
 }
 
