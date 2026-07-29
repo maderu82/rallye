@@ -14,8 +14,13 @@ const RallyMap = dynamic(() => import("@/components/RallyMap"), {
   ssr: false,
   loading: () => <div className="flex h-[420px] items-center justify-center rounded-xl bg-teal-light text-sm text-teal-dark">Kaart laden…</div>,
 });
+const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
+  ssr: false,
+  loading: () => <div className="flex h-[340px] items-center justify-center rounded-xl bg-teal-light text-sm text-teal-dark">Kaart laden…</div>,
+});
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
+import { deriveRoadbook } from "@/lib/geo";
 import {
   addPoint,
   deletePoint,
@@ -302,7 +307,16 @@ export default function EditorClient({
                 run={run}
               />
             ) : selLeg ? (
-              <LegSettings key={selLeg.id} rallyId={rally.id} leg={selLeg} from={labelOf(points[legs.indexOf(selLeg)])} to={labelOf(points[legs.indexOf(selLeg) + 1])} run={run} />
+              <LegSettings
+                key={selLeg.id}
+                rallyId={rally.id}
+                leg={selLeg}
+                from={labelOf(points[legs.indexOf(selLeg)])}
+                to={labelOf(points[legs.indexOf(selLeg) + 1])}
+                fromPoint={points[legs.indexOf(selLeg)]}
+                toPoint={points[legs.indexOf(selLeg) + 1]}
+                run={run}
+              />
             ) : (
               <p className="text-sm text-polder-grey">Selecteer een punt of een traject in de lijst of op de kaart.</p>
             )}
@@ -459,12 +473,16 @@ function LegSettings({
   leg,
   from,
   to,
+  fromPoint,
+  toPoint,
   run,
 }: {
   rallyId: string;
   leg: Leg;
   from: string;
   to: string;
+  fromPoint?: Point;
+  toPoint?: Point;
   run: (fn: () => Promise<unknown>) => void;
 }) {
   return (
@@ -492,7 +510,7 @@ function LegSettings({
         </div>
       ) : null}
 
-      {leg.nav_mode === "turn" ? <RoadbookEditor rallyId={rallyId} leg={leg} run={run} /> : null}
+      {leg.nav_mode === "turn" ? <RoadbookEditor rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
       {leg.nav_mode === "map" ? (
         <div>
@@ -532,15 +550,52 @@ function LegSettings({
   );
 }
 
-// ── roadbook editor (bolletje-pijltje) ───────────────────────────────────────
-function RoadbookEditor({ rallyId, leg, run }: { rallyId: string; leg: Leg; run: (fn: () => Promise<unknown>) => void }) {
+// ── roadbook editor (bolletje-pijltje): draw on map + steps ──────────────────
+function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: string; leg: Leg; fromPoint?: Point; toPoint?: Point; run: (fn: () => Promise<unknown>) => void }) {
   const steps: RoadbookStep[] = Array.isArray(leg.turn_steps) ? leg.turn_steps : [];
+  const turnPoints = Array.isArray(leg.turn_points) ? leg.turn_points : [];
   const save = (next: RoadbookStep[]) => run(() => updateLeg(rallyId, leg.id, { turn_steps: next }));
+
+  const start = fromPoint?.lat != null && fromPoint?.lng != null ? { lat: fromPoint.lat, lng: fromPoint.lng } : null;
+  const end = toPoint?.lat != null && toPoint?.lng != null ? { lat: toPoint.lat, lng: toPoint.lng } : null;
+  const path = [start, ...turnPoints, end].filter(Boolean) as { lat: number; lng: number }[];
+  // live derived directions for the arrows on the map
+  const derivedDirs = deriveRoadbook(path).map((s) => s.dir).slice(0, turnPoints.length);
+  const [addMode, setAddMode] = useState(false);
+
+  function saveTurnPoints(next: { lat: number; lng: number }[]) {
+    const p = [start, ...next, end].filter(Boolean) as { lat: number; lng: number }[];
+    const derived = deriveRoadbook(p, steps.map((s) => s.note));
+    run(() => updateLeg(rallyId, leg.id, { turn_points: next, turn_steps: derived }));
+  }
 
   return (
     <div className="space-y-2">
-      <label className="field-label">Bolletje-pijltje (roadbook) — stap voor stap</label>
-      {steps.length === 0 ? <p className="text-xs text-polder-grey">Nog geen stappen. Voeg de eerste afslag toe.</p> : null}
+      <label className="field-label">Roadbook op de kaart — klik de afslagpunten tussen start en eind</label>
+      {!start || !end ? (
+        <p className="rounded-soft bg-coral-light p-2 text-xs text-coral">Geef eerst het begin- en eindpunt van dit traject een gps-locatie (op de kaart of via lat/lng).</p>
+      ) : (
+        <>
+          <div className="flex gap-2">
+            <button className="btn btn-coral text-sm" onClick={() => setAddMode((v) => !v)}>
+              {addMode ? "✖ Klaar met plaatsen" : "➕ Afslagpunt plaatsen"}
+            </button>
+          </div>
+          <RoadbookMap
+            start={start}
+            end={end}
+            turnPoints={turnPoints}
+            dirs={derivedDirs}
+            addMode={addMode}
+            onAddPoint={(lat, lng) => saveTurnPoints([...turnPoints, { lat, lng }])}
+            onMovePoint={(i, lat, lng) => saveTurnPoints(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)))}
+          />
+          <p className="text-xs text-polder-grey">De route (paars), pijlen en afstanden worden automatisch berekend. Sleep een punt om het te verschuiven.</p>
+        </>
+      )}
+
+      <label className="field-label mt-2">Stappen (automatisch berekend — pas gerust aan)</label>
+      {steps.length === 0 ? <p className="text-xs text-polder-grey">Nog geen stappen. Teken de route op de kaart of voeg handmatig een stap toe.</p> : null}
       {steps.map((s, i) => (
         <div key={i} className="rounded-soft border-2 border-polder-line p-2">
           <div className="flex items-center gap-2">

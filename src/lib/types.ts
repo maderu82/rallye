@@ -62,6 +62,7 @@ export interface Leg {
   enroute_answer: string | null; // server-only; stripped before reaching the browser
   enroute_points: number;
   turn_steps: RoadbookStep[];
+  turn_points: { lat: number; lng: number }[];
   created_at: string;
 }
 
