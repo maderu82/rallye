@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
-import { answerEnroute, buyDigit, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
+import { NEXT_STEP_COST } from "@/lib/play/constants";
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
 
@@ -330,6 +331,7 @@ function WaypointView(props: {
         <LegNav
           leg={leg}
           target={point}
+          testMode={testMode}
           enrouteAnswered={answeredEnroute.has(leg.id)}
           onScored={onScored}
           toast={toast}
@@ -402,6 +404,7 @@ function bearingTo(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
 function LegNav({
   leg,
   target,
+  testMode,
   enrouteAnswered,
   onScored,
   toast,
@@ -409,6 +412,7 @@ function LegNav({
 }: {
   leg: Leg;
   target: Point;
+  testMode: boolean;
   enrouteAnswered: boolean;
   onScored: (score: number) => void;
   toast: (m: string) => void;
@@ -495,28 +499,8 @@ function LegNav({
         </ol>
       ) : null}
 
-      {/* Foto-navigatie: junction photos; players recognise the spot */}
-      {leg.nav_mode === "photo_nav" ? (
-        <ol className="space-y-3">
-          {(leg.turn_steps ?? []).map((s, i) => (
-            <li key={i} className="rounded-soft border-2 border-polder-line bg-white p-2.5">
-              <div className="mb-1.5 flex items-center gap-2">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal text-xs font-bold text-white">{i + 1}</span>
-                {s.note ? <span className="text-[13px] font-semibold text-ink">{s.note}</span> : <span className="text-[13px] text-polder-grey">Herken deze plek onderweg</span>}
-              </div>
-              {s.photo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={s.photo} alt={`Herkenningspunt ${i + 1}`} className="w-full rounded-soft object-cover" />
-              ) : (
-                <div className="rounded-soft bg-paper p-3 text-center text-xs text-polder-grey">Geen foto</div>
-              )}
-            </li>
-          ))}
-          <li className="flex items-center gap-2 rounded-soft bg-teal-light p-2 text-[13px] text-teal-dark">
-            📷 Zoek de plekken op de foto&apos;s — de opdracht opent zodra je op de bestemming bent.
-          </li>
-        </ol>
-      ) : null}
+      {/* Foto-navigatie: one photo at a time; geofence-confirm arrival to advance */}
+      {leg.nav_mode === "photo_nav" ? <PhotoNavSteps leg={leg} testMode={testMode} onScored={onScored} toast={toast} /> : null}
 
       {leg.nav_mode === "map" ? (
         <p className="text-sm leading-relaxed text-polder-grey">
@@ -533,6 +517,126 @@ function LegNav({
           onAnswered={onEnrouteAnswered}
         />
       ) : null}
+    </div>
+  );
+}
+
+// ── foto-navigatie: one photo at a time; confirm arrival within 100 m ────────
+const PHOTO_GEOFENCE_M = 100;
+
+function PhotoNavSteps({
+  leg,
+  testMode,
+  onScored,
+  toast,
+}: {
+  leg: Leg;
+  testMode: boolean;
+  onScored: (score: number) => void;
+  toast: (m: string) => void;
+}) {
+  const photos = leg.turn_steps ?? [];
+  const pts = leg.turn_points ?? [];
+  const [idx, setIdx] = useState(0);
+  const [checking, setChecking] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Restore progress so a reload doesn't send the team back to photo 1.
+  useEffect(() => {
+    const v = Number(localStorage.getItem(`photonav:${leg.id}`) || 0);
+    if (v > 0) setIdx(v);
+  }, [leg.id]);
+  const save = (n: number) => {
+    setIdx(n);
+    try {
+      localStorage.setItem(`photonav:${leg.id}`, String(n));
+    } catch {}
+  };
+
+  if (photos.length === 0) {
+    return <p className="text-sm text-polder-grey">Nog geen foto&apos;s ingesteld voor dit traject.</p>;
+  }
+
+  if (idx >= photos.length) {
+    return (
+      <div className="rounded-soft bg-teal-light p-3 text-center text-sm text-teal-dark">
+        📷 Alle foto&apos;s gevonden! Ga nu naar de eindbestemming — de opdracht opent zodra je er bent.
+      </div>
+    );
+  }
+
+  const cur = photos[idx];
+  const loc = pts[idx];
+
+  function confirmHere() {
+    if (testMode) {
+      toast("🧪 Test: volgende foto vrijgegeven.");
+      save(idx + 1);
+      return;
+    }
+    if (!loc || loc.lat == null || loc.lng == null) {
+      // no coordinates configured for this photo → can't geofence, just advance
+      save(idx + 1);
+      return;
+    }
+    if (!("geolocation" in navigator)) {
+      toast("📡 Geen gps beschikbaar op dit toestel.");
+      return;
+    }
+    setChecking(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setChecking(false);
+        const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { lat: loc.lat as number, lng: loc.lng as number });
+        // allow for gps inaccuracy but never reveal the distance to the player
+        if (d <= Math.max(PHOTO_GEOFENCE_M, pos.coords.accuracy || 0)) {
+          toast("📍 Goed gevonden — volgende foto!");
+          save(idx + 1);
+        } else {
+          toast("🔍 Nog niet op de juiste plek — blijf zoeken.");
+        }
+      },
+      () => {
+        setChecking(false);
+        toast("📡 Geen gps-fix — zet locatie aan en probeer opnieuw.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 },
+    );
+  }
+
+  async function buyNext() {
+    setBusy(true);
+    const r = await buyNextStep(leg.id);
+    setBusy(false);
+    if (r.error) {
+      toast(r.error);
+      return;
+    }
+    onScored(r.score);
+    toast(`🛒 Volgende foto vrijgekocht (−${NEXT_STEP_COST}).`);
+    save(idx + 1);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-[13px] font-bold text-teal-dark">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal text-xs text-white">{idx + 1}</span>
+        Foto {idx + 1} van {photos.length} — zoek deze plek
+      </div>
+      {cur.photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={cur.photo} alt={`Herkenningspunt ${idx + 1}`} className="w-full rounded-soft object-cover" />
+      ) : (
+        <div className="rounded-soft bg-paper p-4 text-center text-xs text-polder-grey">Geen foto ingesteld</div>
+      )}
+      {cur.note ? <p className="text-[13px] text-polder-grey">{cur.note}</p> : null}
+      <button className="btn-demo w-full" disabled={checking} onClick={confirmHere}>
+        {checking ? "📡 Locatie controleren…" : "📍 We zijn er!"}
+      </button>
+      <button className="btn btn-ghost w-full text-sm" disabled={busy} onClick={buyNext}>
+        {busy ? "Bezig…" : `🛒 Volgende foto afkopen (−${NEXT_STEP_COST} ptn)`}
+      </button>
+      <p className="text-[11px] text-polder-grey">Je moet binnen ±{PHOTO_GEOFENCE_M} m van de plek staan. Geen idee? Koop de volgende foto af — kan alleen als je genoeg punten hebt.</p>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { grade } from "@/lib/grading";
 import type { Assignment, Team } from "@/lib/types";
-import { TEAM_COOKIE } from "./constants";
+import { TEAM_COOKIE, NEXT_STEP_COST } from "./constants";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 async function currentTeam(): Promise<{ team: Team; db: ReturnType<typeof createAdminClient> } | null> {
@@ -394,6 +394,34 @@ export async function buyDigit(assignmentId: string): Promise<ActionResult & { r
     .map((c, i) => (i <= already ? c : "•"))
     .join(" ");
   return { ok: true, complete: false, feedback: `🔢 Cijfer ${already + 1} gekocht.`, score: await scoreOf(db, team.id), revealed };
+}
+
+// ── buy the next photo/waypoint (foto-navigatie) for a fixed point cost ───────
+export async function buyNextStep(legId: string): Promise<{ ok: boolean; score: number; error?: string }> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, score: 0, error: "Geen actief team." };
+  const { team, db } = ctx;
+
+  const { data: leg } = await db.from("legs").select("id,rally_id").eq("id", legId).maybeSingle();
+  if (!leg || leg.rally_id !== team.rally_id) return { ok: false, score: await scoreOf(db, team.id), error: "Traject niet gevonden." };
+
+  const score = await scoreOf(db, team.id);
+  if (score < NEXT_STEP_COST) {
+    return { ok: false, score, error: `Niet genoeg punten om af te kopen (je hebt er ${score}, nodig: ${NEXT_STEP_COST}).` };
+  }
+
+  await db.from("team_events").insert({
+    team_id: team.id,
+    rally_id: team.rally_id,
+    point_id: null,
+    assignment_id: null,
+    kind: "penalty",
+    points_delta: -NEXT_STEP_COST,
+    is_hint: false,
+    detail: { boughtNextPhoto: true, leg_id: legId },
+  });
+
+  return { ok: true, score: await scoreOf(db, team.id) };
 }
 
 // ── en-route question ─────────────────────────────────────────────────────────
