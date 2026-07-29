@@ -357,7 +357,8 @@ export async function updateLeg(
 ) {
   const db = await createClient();
   await requireUser(db);
-  await db.from("legs").update(fields).eq("id", legId);
+  const { error } = await db.from("legs").update(fields).eq("id", legId);
+  if (error) throw new Error(error.message);
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 

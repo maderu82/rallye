@@ -102,7 +102,18 @@ export default function EditorClient({
 
   function run(fn: () => Promise<unknown>) {
     start(async () => {
-      await fn();
+      try {
+        await fn();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // Surface DB errors (e.g. a nav_mode not yet allowed by the schema)
+        // instead of silently swallowing them.
+        alert(
+          /nav_mode/.test(msg)
+            ? "Deze navigatiewijze bestaat nog niet in de database. Draai de laatste supabase/setup.sql (migratie 0011) en probeer opnieuw."
+            : "Er ging iets mis bij het opslaan: " + msg,
+        );
+      }
       router.refresh();
     });
   }

@@ -65,7 +65,7 @@ create table if not exists public.legs (
   id               uuid primary key default gen_random_uuid(),
   rally_id         uuid not null references public.rallies (id) on delete cascade,
   position         int  not null,
-  nav_mode         text not null default 'routebook' check (nav_mode in ('compass','routebook','turn','map','cryptic','photo_nav')),
+  nav_mode         text not null default 'routebook',
   bearing          numeric,
   distance         numeric,
   steps            text,
@@ -273,10 +273,9 @@ insert into storage.buckets (id, name, public)
 values ('route-photos', 'route-photos', true)
 on conflict (id) do update set public = true;
 
--- Allow the two puzzle navigation modes on existing installs (idempotent).
+-- Drop the nav_mode CHECK so new navigation modes never need a migration
+-- again (idempotent; values are controlled in app code).
 alter table public.legs drop constraint if exists legs_nav_mode_check;
-alter table public.legs add constraint legs_nav_mode_check
-  check (nav_mode in ('compass','routebook','turn','map','cryptic','photo_nav'));
 
 -- ============================================================================
 -- Demo rally "Polderpuzzel rallye" (teamcode RLY-7H2K). Skipped if it exists.
