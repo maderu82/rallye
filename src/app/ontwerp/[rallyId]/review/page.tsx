@@ -15,7 +15,10 @@ type ReviewItem = {
   typeLabel: string;
   createdAt: string;
   photoUrl: string | null;
+  isVideo: boolean;
 };
+
+const VIDEO_RE = /\.(mp4|webm|mov|m4v|ogg|3gp)$/i;
 
 export default async function ReviewPage({ params }: { params: Promise<{ rallyId: string }> }) {
   const { rallyId } = await params;
@@ -63,6 +66,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ rallyId
         typeLabel: a ? BLOCK_BY_TYPE[a.type as keyof typeof BLOCK_BY_TYPE].label : "Inzending",
         createdAt: new Date(e.created_at).toLocaleString("nl-NL"),
         photoUrl,
+        isVideo: e.photo_path ? VIDEO_RE.test(e.photo_path) : false,
       };
     }),
   );
@@ -88,11 +92,13 @@ export default async function ReviewPage({ params }: { params: Promise<{ rallyId
                 <span className="ml-auto chip">{it.typeLabel}</span>
               </div>
               <p className="mb-2 text-sm text-polder-grey">{it.prompt}</p>
-              {it.photoUrl ? (
+              {it.photoUrl && it.isVideo ? (
+                <video src={it.photoUrl} controls playsInline className="mb-2 max-h-64 w-full rounded-soft bg-black" />
+              ) : it.photoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={it.photoUrl} alt="Bewijsfoto" className="mb-2 max-h-64 w-full rounded-soft object-cover" />
               ) : (
-                <div className="mb-2 rounded-soft bg-paper p-3 text-center text-xs text-polder-grey">Geen foto bijgevoegd</div>
+                <div className="mb-2 rounded-soft bg-paper p-3 text-center text-xs text-polder-grey">Geen bijlage</div>
               )}
               <p className="mb-2 text-xs text-polder-grey">{it.createdAt}</p>
               <ReviewForm rallyId={rallyId} eventId={it.id} awarded={it.awarded} />

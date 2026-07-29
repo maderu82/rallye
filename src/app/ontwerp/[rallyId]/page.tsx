@@ -11,8 +11,11 @@ export type ActivityItem = {
   answer: string;
   points: number;
   photoUrl: string | null;
+  isVideo: boolean;
   when: string;
 };
+
+const VIDEO_RE = /\.(mp4|webm|mov|m4v|ogg|3gp)$/i;
 
 function answerText(detail: Record<string, unknown>): string {
   if (detail.answer != null) return String(detail.answer);
@@ -24,6 +27,7 @@ function answerText(detail: Record<string, unknown>): string {
   if (s.value != null) return String(s.value);
   if (s.selfScore != null) return `Eigen score ${s.selfScore}`;
   if (Array.isArray(s.order)) return (s.order as unknown[]).join(", ");
+  if (s.media === "video") return "🎥 filmpje ingezonden";
   if (s.photo) return "📷 foto ingezonden";
   if (s.arrived || s.scanned) return "✔️ bevestigd";
   return "";
@@ -89,6 +93,7 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
       answer,
       points: e.points_delta,
       photoUrl,
+      isVideo: e.photo_path ? VIDEO_RE.test(e.photo_path) : false,
       when: new Date(e.created_at).toLocaleString("nl-NL"),
     });
   }

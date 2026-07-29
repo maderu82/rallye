@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
-import { answerEnroute, buyDigit, endTestPlay, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
 
@@ -862,6 +862,39 @@ function AssignmentCard({
     return r;
   }
 
+  // Upload a video straight to Storage (signed URL) — bypasses the action size
+  // limit — then record + grade it.
+  async function sendVideo(file: File) {
+    const m = file.name.match(/\.([a-z0-9]+)$/i);
+    const ext = m ? m[1].toLowerCase() : file.type.includes("webm") ? "webm" : file.type.includes("quicktime") ? "mov" : "mp4";
+    setBusy(true);
+    toast("🎥 Filmpje uploaden…");
+    const prep = await createMediaUploadUrl(assignment.id, ext);
+    if (!prep.ok || !prep.path || !prep.token || !prep.bucket) {
+      setBusy(false);
+      toast(prep.error ?? "Upload mislukt.");
+      return;
+    }
+    const supabase = createClient();
+    const { error: upErr } = await supabase.storage
+      .from(prep.bucket)
+      .uploadToSignedUrl(prep.path, prep.token, file, { contentType: file.type || "video/mp4" });
+    if (upErr) {
+      setBusy(false);
+      toast("Uploaden mislukt — controleer je verbinding en probeer opnieuw.");
+      return;
+    }
+    const r = await submitMedia(assignment.id, prep.path);
+    setBusy(false);
+    if (r.error) {
+      toast(r.error);
+      return;
+    }
+    setFeedback({ ok: r.ok, msg: r.feedback });
+    onScored(r.score, r.badge);
+    if (r.complete) onComplete();
+  }
+
   async function doHint() {
     setBusy(true);
     const r = await useHint(assignment.id);
@@ -885,7 +918,7 @@ function AssignmentCard({
       {assignment.prompt ? <p className="mb-2.5 font-bold">{assignment.prompt}</p> : null}
 
       {!done ? (
-        <TypeBody type={assignment.type} assignmentId={assignment.id} cfg={cfg} busy={busy} testMode={testMode} send={send} sendForm={sendForm} toast={toast} />
+        <TypeBody type={assignment.type} assignmentId={assignment.id} cfg={cfg} busy={busy} testMode={testMode} send={send} sendForm={sendForm} sendVideo={sendVideo} toast={toast} />
       ) : null}
 
       {feedback ? (
@@ -911,7 +944,7 @@ function AssignmentCard({
         />
       ) : null}
 
-      {assignment.type === "photo_search" || assignment.type === "free_game" ? (
+      {assignment.type === "photo_search" || assignment.type === "free_game" || assignment.type === "video_task" ? (
         <p className="mt-2 text-xs text-polder-grey">De organisator kan dit na afloop bekijken en punten corrigeren.</p>
       ) : null}
     </div>
@@ -927,6 +960,7 @@ function TypeBody({
   testMode,
   send,
   sendForm,
+  sendVideo,
   toast,
 }: {
   type: PublicAssignment["type"];
@@ -936,6 +970,7 @@ function TypeBody({
   testMode: boolean;
   send: (s: Record<string, unknown>) => Promise<{ ok: boolean }>;
   sendForm: (s: Record<string, unknown>, file?: File | null) => Promise<{ ok: boolean }>;
+  sendVideo: (file: File) => Promise<void>;
   toast: (m: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -1130,6 +1165,42 @@ function TypeBody({
         </div>
       );
     }
+
+    case "video_task":
+      return (
+        <div className="space-y-2">
+          <label className="btn-demo block cursor-pointer text-center">
+            🎥 Filmpje opnemen{busy ? " — uploaden…" : ""}
+            <input
+              type="file"
+              accept="video/*"
+              capture="environment"
+              className="hidden"
+              disabled={busy}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (f) void sendVideo(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <label className="btn btn-ghost block cursor-pointer text-center">
+            📁 Bestaand filmpje uploaden
+            <input
+              type="file"
+              accept="video/*"
+              className="hidden"
+              disabled={busy}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (f) void sendVideo(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <p className="text-[11px] text-polder-grey">Neem direct op of kies een filmpje uit je galerij. De organisator bekijkt het na afloop.</p>
+        </div>
+      );
 
     case "free_game": {
       const max = Number(cfg.max ?? 15);

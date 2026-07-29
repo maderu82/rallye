@@ -16,6 +16,7 @@ export type BlockType =
   | "qr_search"
   | "speed_test"
   | "compass_point"
+  | "video_task"
   | "free_game";
 
 export interface BlockDef {
@@ -41,6 +42,7 @@ export const BLOCKS: BlockDef[] = [
   { type: "qr_search", label: "QR-zoekopdracht", grading: "auto", icon: "🔍", blurb: "Meerdere bordjes; alleen het juiste scoort." },
   { type: "speed_test", label: "Gemiddelde-snelheidsproef", grading: "scale", icon: "⏱️", blurb: "Rijd een doelgemiddelde; gps meet het resultaat." },
   { type: "compass_point", label: "Kompasnavigatiepunt", grading: "auto", icon: "🧭", blurb: "Navigeer op koers + afstand naar het punt." },
+  { type: "video_task", label: "Video-opdracht", grading: "manual", icon: "🎥", blurb: "Neem een filmpje op of upload er een als inzending." },
   { type: "free_game", label: "Vrij spelmoment", grading: "manual", icon: "🎪", blurb: "Fysiek spel bij een stop; score handmatig ingevoerd." },
 ];
 

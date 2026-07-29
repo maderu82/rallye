@@ -20,7 +20,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { deriveRoadbook, fetchRoadRoute } from "@/lib/geo";
+import { deriveRoadbook, fetchRoadRoute, roadbookDirsFromGeom } from "@/lib/geo";
 import {
   addPoint,
   deletePoint,
@@ -75,7 +75,7 @@ type LiveTeam = {
   hints: number;
   created_at: string;
 };
-type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; when: string };
+type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; isVideo: boolean; when: string };
 type Sel = { kind: "point" | "leg"; id: string } | null;
 
 export default function EditorClient({
@@ -580,10 +580,14 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run }: { rallyId: st
     const road = await fetchRoadRoute(p);
     setRouting(false);
     const auto = deriveRoadbook(p, [], road?.legs); // nextPoints.length + 1 entries (last = arrive)
+    // Prefer the real road-angle suggestion from the leg geometry; fall back to
+    // the straight-line derivation when routing failed.
+    const smartDirs = road?.legGeoms ? roadbookDirsFromGeom(road.legGeoms) : null;
     const merged: RoadbookStep[] = auto.map((a, i) => {
       if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveStep?.note ?? "" };
       const pd = perPoint[i];
-      return { dist: a.dist, dir: pd?.dir ?? a.dir, note: pd?.note ?? "" };
+      const suggested = smartDirs?.[i] ?? a.dir;
+      return { dist: a.dist, dir: pd?.dir ?? suggested, note: pd?.note ?? "" };
     });
     run(() => updateLeg(rallyId, leg.id, { turn_points: nextPoints, turn_steps: merged, turn_route: road?.route ?? [] }));
   }
@@ -780,7 +784,9 @@ function LiveView({
                               </span>
                             </div>
                             {it.answer ? <p className="mt-0.5 text-[13px] text-polder-grey">Antwoord: <b className="text-ink">{it.answer}</b></p> : null}
-                            {it.photoUrl ? (
+                            {it.photoUrl && it.isVideo ? (
+                              <video src={it.photoUrl} controls playsInline className="mt-1 max-h-40 w-full rounded-soft bg-black" />
+                            ) : it.photoUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <a href={it.photoUrl} target="_blank" rel="noreferrer">
                                 <img src={it.photoUrl} alt="Bewijsfoto" className="mt-1 max-h-40 w-full rounded-soft object-cover" />

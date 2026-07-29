@@ -262,10 +262,11 @@ begin
 exception when undefined_object then null;
 end $$;
 
--- ── private storage bucket for proof photos ──────────────────────────────────
-insert into storage.buckets (id, name, public)
-values ('proof-photos', 'proof-photos', false)
-on conflict (id) do nothing;
+-- ── private storage bucket for proof photos + videos ────────────────────────
+-- 200 MB limit so team videos (e.g. the ferry crossing) fit; default is 50 MB.
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('proof-photos', 'proof-photos', false, 209715200)
+on conflict (id) do update set file_size_limit = excluded.file_size_limit;
 
 -- ============================================================================
 -- Demo rally "Polderpuzzel rallye" (teamcode RLY-7H2K). Skipped if it exists.

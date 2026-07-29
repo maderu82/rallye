@@ -160,6 +160,19 @@ export function grade(
       };
     }
 
+    case "video_task": {
+      // Video submitted as proof/fun; full points on upload, organizer can
+      // watch it afterwards and adjust the score.
+      return {
+        complete: true,
+        delta: a.points,
+        ok: true,
+        feedback: "✅ Filmpje ingestuurd!",
+        kind: "assignment",
+        needsReview: true,
+      };
+    }
+
     case "free_game": {
       // MANUAL: team/host enters a score, clamped to [0, max].
       const max = num(cfg.max, a.points);

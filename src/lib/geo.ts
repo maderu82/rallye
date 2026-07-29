@@ -19,22 +19,76 @@ export function haversine(a: LL, b: LL): number {
  */
 export async function fetchRoadRoute(
   waypoints: LL[],
-): Promise<{ route: [number, number][]; legs: number[] } | null> {
+): Promise<{ route: [number, number][]; legs: number[]; legGeoms: [number, number][][] } | null> {
   if (waypoints.length < 2) return null;
   try {
     const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(";");
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+    // steps=true gives per-leg geometry so we can read the *real* road angle at
+    // each turn point (much better than the straight line between clicks).
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
     const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();
     const r = data.routes?.[0];
     if (!r) return null;
     const route = (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
-    const legs = (r.legs as { distance: number }[]).map((l) => Math.round(l.distance));
-    return { route, legs };
+    const rawLegs = (r.legs ?? []) as { distance: number; steps?: { geometry?: { coordinates: [number, number][] } }[] }[];
+    const legs = rawLegs.map((l) => Math.round(l.distance));
+    const legGeoms: [number, number][][] = rawLegs.map((l) => {
+      const pts: [number, number][] = [];
+      for (const s of l.steps ?? []) {
+        for (const [lng, lat] of s.geometry?.coordinates ?? []) pts.push([lat, lng]);
+      }
+      return pts;
+    });
+    return { route, legs, legGeoms };
   } catch {
     return null;
   }
+}
+
+/** Bearing of the last ~`meters` of a road-leg geometry (the approach heading). */
+function bearingIntoEnd(coords: [number, number][], meters = 22): number | null {
+  if (coords.length < 2) return null;
+  const end = coords[coords.length - 1];
+  let acc = 0;
+  for (let i = coords.length - 1; i > 0; i--) {
+    acc += haversine({ lat: coords[i][0], lng: coords[i][1] }, { lat: coords[i - 1][0], lng: coords[i - 1][1] });
+    if (acc >= meters) return bearing({ lat: coords[i - 1][0], lng: coords[i - 1][1] }, { lat: end[0], lng: end[1] });
+  }
+  return bearing({ lat: coords[0][0], lng: coords[0][1] }, { lat: end[0], lng: end[1] });
+}
+
+/** Bearing of the first ~`meters` of a road-leg geometry (the departure heading). */
+function bearingFromStart(coords: [number, number][], meters = 22): number | null {
+  if (coords.length < 2) return null;
+  const start = coords[0];
+  let acc = 0;
+  for (let i = 1; i < coords.length; i++) {
+    acc += haversine({ lat: coords[i - 1][0], lng: coords[i - 1][1] }, { lat: coords[i][0], lng: coords[i][1] });
+    if (acc >= meters) return bearing({ lat: start[0], lng: start[1] }, { lat: coords[i][0], lng: coords[i][1] });
+  }
+  return bearing({ lat: start[0], lng: start[1] }, { lat: coords[coords.length - 1][0], lng: coords[coords.length - 1][1] });
+}
+
+/**
+ * Suggest a roadbook direction per turn point from the actual road geometry:
+ * the turn at vertex k = (heading leaving leg k) − (heading arriving leg k-1).
+ * Returns one id per vertex after the start; the final one is "arrive".
+ * Length equals legGeoms.length (one entry per leg).
+ */
+export function roadbookDirsFromGeom(legGeoms: [number, number][][]): string[] {
+  const dirs: string[] = [];
+  for (let i = 0; i < legGeoms.length; i++) {
+    if (i === legGeoms.length - 1) {
+      dirs.push("arrive");
+      continue;
+    }
+    const inB = bearingIntoEnd(legGeoms[i]);
+    const outB = bearingFromStart(legGeoms[i + 1]);
+    dirs.push(inB == null || outB == null ? "straight" : classifyTurn(outB - inB));
+  }
+  return dirs;
 }
 
 /** Bearing 0..360 (0 = north) from a to b. */

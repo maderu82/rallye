@@ -150,6 +150,72 @@ export async function submitAnswer(
   return { ok: result.ok, complete: result.complete, feedback: result.feedback, score: await scoreOf(db, team.id), badge: result.badge };
 }
 
+// ── video upload (direct-to-Storage via a signed URL) ────────────────────────
+// Videos are too big for the 8 MB server-action limit, so the browser uploads
+// straight to Storage using a short-lived signed URL, then calls submitMedia.
+const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "m4v", "ogg", "3gp"]);
+
+export async function createMediaUploadUrl(
+  assignmentId: string,
+  ext: string,
+): Promise<{ ok: boolean; bucket?: string; path?: string; token?: string; error?: string }> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, error: "Geen actief team." };
+  const { team, db } = ctx;
+
+  const { data: assignment } = await db.from("assignments").select("id,rally_id").eq("id", assignmentId).maybeSingle();
+  if (!assignment || assignment.rally_id !== team.rally_id) return { ok: false, error: "Opdracht niet gevonden." };
+
+  const safeExt = VIDEO_EXTS.has(ext.toLowerCase()) ? ext.toLowerCase() : "mp4";
+  const path = `${team.rally_id}/${team.id}-${assignmentId}/video-${crypto.randomUUID()}.${safeExt}`;
+  const { data, error } = await db.storage.from(PHOTO_BUCKET).createSignedUploadUrl(path);
+  if (error || !data) return { ok: false, error: "Kon upload niet voorbereiden. Probeer opnieuw." };
+  return { ok: true, bucket: PHOTO_BUCKET, path: data.path, token: data.token };
+}
+
+export async function submitMedia(assignmentId: string, path: string): Promise<ActionResult> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, complete: false, feedback: "", score: 0, error: "Geen actief team." };
+  const { team, db } = ctx;
+
+  const { data: assignment } = await db.from("assignments").select("*").eq("id", assignmentId).maybeSingle();
+  if (!assignment || assignment.rally_id !== team.rally_id) {
+    return { ok: false, complete: false, feedback: "", score: await scoreOf(db, team.id), error: "Opdracht niet gevonden." };
+  }
+  const a = assignment as Assignment;
+
+  // Only accept a path this team was granted (prevents pointing at other uploads).
+  if (!path.startsWith(`${team.rally_id}/${team.id}-${assignmentId}/`)) {
+    return { ok: false, complete: false, feedback: "", score: await scoreOf(db, team.id), error: "Ongeldige upload." };
+  }
+
+  if (await isCompleted(db, team.id, assignmentId)) {
+    return { ok: true, complete: true, feedback: "Deze opdracht is al voltooid.", score: await scoreOf(db, team.id) };
+  }
+
+  const submission = { media: "video" as const };
+  const result = grade(a, submission);
+
+  await db.from("team_events").insert({
+    team_id: team.id,
+    rally_id: team.rally_id,
+    assignment_id: a.id,
+    point_id: a.point_id,
+    kind: result.kind,
+    points_delta: result.delta,
+    needs_review: result.needsReview ?? false,
+    photo_path: path,
+    detail: { complete: result.complete, submission },
+  });
+
+  if (result.complete) {
+    const { data: pt } = await db.from("points").select("position").eq("id", a.point_id).single();
+    if (pt) await db.from("teams").update({ current_index: Math.max(team.current_index, pt.position) }).eq("id", team.id);
+  }
+
+  return { ok: result.ok, complete: result.complete, feedback: result.feedback, score: await scoreOf(db, team.id), badge: result.badge };
+}
+
 // ── submit with an (optional) proof photo ────────────────────────────────────
 // Used by photo-search (required photo) and free-game (optional proof photo).
 // Uploads to the private `proof-photos` bucket via the service role, then grades.
