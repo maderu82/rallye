@@ -318,6 +318,9 @@ function WaypointView(props: {
   const gated = point.gps_unlock && assignment?.type !== "speed_test";
   const [unlocked, setUnlocked] = useState(!gated);
   const done = assignment ? completed.has(assignment.id) : true;
+  // Puzzle navigation modes hide the destination: the point name + note would
+  // otherwise reveal where to go, so keep them hidden until the team arrives.
+  const hideDest = leg != null && ["turn", "routebook", "cryptic", "photo_nav"].includes(leg.nav_mode);
 
   return (
     <div>
@@ -339,7 +342,7 @@ function WaypointView(props: {
         />
       ) : null}
 
-      {point.note ? (
+      {point.note && (unlocked || !hideDest) ? (
         <div className="mb-3.5 rounded-card bg-teal-light p-3 text-sm text-teal-dark">
           📍 <b>{point.name}</b> — {point.note}
         </div>
@@ -349,13 +352,18 @@ function WaypointView(props: {
         <GpsUnlock
           point={point}
           testMode={testMode}
-          hideDistance={leg != null && ["turn", "routebook", "cryptic", "photo_nav"].includes(leg.nav_mode)}
+          hideDistance={hideDest}
           onUnlock={() => setUnlocked(true)}
           toast={toast}
         />
       ) : null}
 
-      {assignment ? (
+      {assignment && !unlocked && gated && hideDest ? (
+        // Puzzle navigation: don't even preview the task — it can reveal the spot.
+        <div className="card border-l-4 border-polder-line text-center text-sm text-polder-grey">
+          🔒 De opdracht verschijnt zodra je op de bestemming bent.
+        </div>
+      ) : assignment ? (
         <div className={unlocked || !gated ? "" : "pointer-events-none opacity-50 grayscale"}>
           <AssignmentCard
             assignment={assignment}
