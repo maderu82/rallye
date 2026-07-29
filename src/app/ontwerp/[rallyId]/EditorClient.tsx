@@ -527,6 +527,32 @@ function LegSettings({
 
       {leg.nav_mode === "photo_nav" ? <RoadbookEditor variant="photo_nav" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
+      {leg.nav_mode === "photo_nav" ? (
+        <div className="grid grid-cols-2 gap-2 rounded-soft bg-paper p-3">
+          <div>
+            <label className="field-label">Aankomststraal (m)</label>
+            <input
+              type="number"
+              min={10}
+              defaultValue={leg.photo_radius ?? 100}
+              className="input"
+              onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { photo_radius: v === "" ? null : Number(v) })); }}
+            />
+          </div>
+          <div>
+            <label className="field-label">Afkoopprijs volgende foto (ptn)</label>
+            <input
+              type="number"
+              min={0}
+              defaultValue={leg.photo_buy_cost ?? 5}
+              className="input"
+              onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { photo_buy_cost: v === "" ? null : Number(v) })); }}
+            />
+          </div>
+          <p className="col-span-2 text-xs text-polder-grey">Spelers moeten binnen deze straal van een foto staan om door te gaan; of ze kopen de volgende foto af voor dit aantal punten (alleen als ze genoeg hebben).</p>
+        </div>
+      ) : null}
+
       {leg.nav_mode === "map" ? (
         <div>
           <label className="field-label">Toelichting (optioneel)</label>

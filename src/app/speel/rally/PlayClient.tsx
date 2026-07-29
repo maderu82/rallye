@@ -537,6 +537,8 @@ function PhotoNavSteps({
 }) {
   const photos = leg.turn_steps ?? [];
   const pts = leg.turn_points ?? [];
+  const radius = leg.photo_radius != null && leg.photo_radius > 0 ? leg.photo_radius : PHOTO_GEOFENCE_M;
+  const cost = leg.photo_buy_cost != null && leg.photo_buy_cost > 0 ? leg.photo_buy_cost : NEXT_STEP_COST;
   const [idx, setIdx] = useState(0);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -589,7 +591,7 @@ function PhotoNavSteps({
         setChecking(false);
         const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { lat: loc.lat as number, lng: loc.lng as number });
         // allow for gps inaccuracy but never reveal the distance to the player
-        if (d <= Math.max(PHOTO_GEOFENCE_M, pos.coords.accuracy || 0)) {
+        if (d <= Math.max(radius, pos.coords.accuracy || 0)) {
           toast("📍 Goed gevonden — volgende foto!");
           save(idx + 1);
         } else {
@@ -613,7 +615,7 @@ function PhotoNavSteps({
       return;
     }
     onScored(r.score);
-    toast(`🛒 Volgende foto vrijgekocht (−${NEXT_STEP_COST}).`);
+    toast(`🛒 Volgende foto vrijgekocht (−${cost}).`);
     save(idx + 1);
   }
 
@@ -634,9 +636,9 @@ function PhotoNavSteps({
         {checking ? "📡 Locatie controleren…" : "📍 We zijn er!"}
       </button>
       <button className="btn btn-ghost w-full text-sm" disabled={busy} onClick={buyNext}>
-        {busy ? "Bezig…" : `🛒 Volgende foto afkopen (−${NEXT_STEP_COST} ptn)`}
+        {busy ? "Bezig…" : `🛒 Volgende foto afkopen (−${cost} ptn)`}
       </button>
-      <p className="text-[11px] text-polder-grey">Je moet binnen ±{PHOTO_GEOFENCE_M} m van de plek staan. Geen idee? Koop de volgende foto af — kan alleen als je genoeg punten hebt.</p>
+      <p className="text-[11px] text-polder-grey">Je moet binnen ±{radius} m van de plek staan. Geen idee? Koop de volgende foto af — kan alleen als je genoeg punten hebt.</p>
     </div>
   );
 }

@@ -402,12 +402,13 @@ export async function buyNextStep(legId: string): Promise<{ ok: boolean; score: 
   if (!ctx) return { ok: false, score: 0, error: "Geen actief team." };
   const { team, db } = ctx;
 
-  const { data: leg } = await db.from("legs").select("id,rally_id").eq("id", legId).maybeSingle();
+  const { data: leg } = await db.from("legs").select("id,rally_id,photo_buy_cost").eq("id", legId).maybeSingle();
   if (!leg || leg.rally_id !== team.rally_id) return { ok: false, score: await scoreOf(db, team.id), error: "Traject niet gevonden." };
 
+  const cost = leg.photo_buy_cost != null && leg.photo_buy_cost > 0 ? leg.photo_buy_cost : NEXT_STEP_COST;
   const score = await scoreOf(db, team.id);
-  if (score < NEXT_STEP_COST) {
-    return { ok: false, score, error: `Niet genoeg punten om af te kopen (je hebt er ${score}, nodig: ${NEXT_STEP_COST}).` };
+  if (score < cost) {
+    return { ok: false, score, error: `Niet genoeg punten om af te kopen (je hebt er ${score}, nodig: ${cost}).` };
   }
 
   await db.from("team_events").insert({
@@ -416,7 +417,7 @@ export async function buyNextStep(legId: string): Promise<{ ok: boolean; score: 
     point_id: null,
     assignment_id: null,
     kind: "penalty",
-    points_delta: -NEXT_STEP_COST,
+    points_delta: -cost,
     is_hint: false,
     detail: { boughtNextPhoto: true, leg_id: legId },
   });

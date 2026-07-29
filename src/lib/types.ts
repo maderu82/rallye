@@ -66,6 +66,8 @@ export interface Leg {
   turn_points: { lat: number; lng: number }[];
   turn_route: [number, number][];
   speed_limit: number | null; // per-leg speed warning threshold (km/h); null = use rally default
+  photo_radius: number | null; // foto-navigatie: arrival geofence in m; null = default 100
+  photo_buy_cost: number | null; // foto-navigatie: cost to buy next photo; null = default 5
   created_at: string;
 }
 

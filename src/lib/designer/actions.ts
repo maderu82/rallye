@@ -362,6 +362,8 @@ export async function updateLeg(
     turn_points: { lat: number; lng: number }[];
     turn_route: [number, number][];
     speed_limit: number | null;
+    photo_radius: number | null;
+    photo_buy_cost: number | null;
   }>,
 ) {
   const db = await createClient();
