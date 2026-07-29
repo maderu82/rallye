@@ -323,7 +323,13 @@ function WaypointView(props: {
       ) : null}
 
       {!unlocked && gated ? (
-        <GpsUnlock point={point} testMode={testMode} onUnlock={() => setUnlocked(true)} toast={toast} />
+        <GpsUnlock
+          point={point}
+          testMode={testMode}
+          hideDistance={leg?.nav_mode === "turn" || leg?.nav_mode === "routebook"}
+          onUnlock={() => setUnlocked(true)}
+          toast={toast}
+        />
       ) : null}
 
       {assignment ? (
@@ -641,7 +647,7 @@ function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
 
 // Continuously watches the team's position and auto-unlocks the assignment when
 // they arrive within the point's unlock radius — like reaching a roadbook point.
-function GpsUnlock({ point, testMode, onUnlock, toast }: { point: Point; testMode: boolean; onUnlock: () => void; toast: (m: string) => void }) {
+function GpsUnlock({ point, testMode, hideDistance, onUnlock, toast }: { point: Point; testMode: boolean; hideDistance: boolean; onUnlock: () => void; toast: (m: string) => void }) {
   const [dist, setDist] = useState<number | null>(null);
   const [err, setErr] = useState(false);
   const radius = point.unlock_radius || 50;
@@ -681,7 +687,18 @@ function GpsUnlock({ point, testMode, onUnlock, toast }: { point: Point; testMod
       <div className="mb-2.5 flex items-center gap-2 rounded-soft bg-coral-light p-2.5 text-[13px] font-bold text-coral">
         🔒 Opdracht vergrendeld — de opdracht opent automatisch zodra je aankomt.
       </div>
-      {dist != null ? (
+      {hideDistance ? (
+        <div className="rounded-soft bg-teal-light p-3 text-center">
+          <div className="text-2xl">🧭📖</div>
+          <p className="text-[13px] text-polder-grey">
+            {err
+              ? "📡 Geen gps. Zet locatie aan (of gebruik testmodus)."
+              : dist != null
+              ? "Volg het roadbook — de opdracht opent zodra je op de bestemming bent."
+              : "📡 Locatie bepalen…"}
+          </p>
+        </div>
+      ) : dist != null ? (
         <div className="rounded-soft bg-teal-light p-3 text-center">
           <div className="text-3xl font-bold text-teal-dark">
             {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`}
