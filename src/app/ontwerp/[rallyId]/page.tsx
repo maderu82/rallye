@@ -152,6 +152,19 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
     if (list.length) teamSpeeds[t.id] = list;
   }
 
+  // Detect a database that hasn't had the latest setup.sql run yet: probing the
+  // newest columns errors when they're missing, so we can warn the organizer.
+  let schemaBehind = false;
+  try {
+    const probes = await Promise.all([
+      admin.from("legs").select("photo_radius,photo_buy_cost,speed_limit").limit(1),
+      admin.from("rallies").select("speed_limit").limit(1),
+    ]);
+    schemaBehind = probes.some((p) => p.error != null);
+  } catch {
+    schemaBehind = true;
+  }
+
   return (
     <EditorClient
       rally={rally}
@@ -161,6 +174,7 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
       liveTeams={liveTeams}
       teamActivity={teamActivity}
       teamSpeeds={teamSpeeds}
+      schemaBehind={schemaBehind}
     />
   );
 }

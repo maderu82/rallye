@@ -783,39 +783,43 @@ function LiveCompass({ target }: { target: Point }) {
   const distance =
     pos && hasTarget ? Math.round(haversine(pos, { lat: target.lat!, lng: target.lng! })) : null;
 
-  // rotate the dial so N points to real north; the needle sits at the target's
-  // absolute bearing → on screen the needle points the real-world direction.
-  const dialRot = heading != null ? -heading : 0;
+  // Just a single arrow: when we know the phone heading, rotate it relative to
+  // that so the player turns until the arrow points up; otherwise point at the
+  // absolute bearing. No compass ring / degrees — that confused players.
+  const arrowRot = bearing != null ? (heading != null ? (bearing - heading + 360) % 360 : bearing) : 0;
+  const pointingUp = heading != null && bearing != null && Math.abs(((arrowRot + 180) % 360) - 180) < 12;
 
   return (
     <div className="flex flex-col items-center py-1.5">
-      <div className="compass" style={{ transform: `rotate(${dialRot}deg)`, transition: "transform .12s linear" }}>
-        <span className="pt" style={{ top: 8, left: "50%", transform: "translateX(-50%)" }}>N</span>
-        <span className="pt" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)" }}>Z</span>
-        <span className="pt" style={{ left: 10, top: "50%", transform: "translateY(-50%)" }}>W</span>
-        <span className="pt" style={{ right: 10, top: "50%", transform: "translateY(-50%)" }}>O</span>
-        <div className="needle" style={{ transform: `rotate(${bearing ?? 0}deg)`, transition: "transform .2s ease" }} />
+      <div className={`flex h-40 w-40 items-center justify-center rounded-full ${pointingUp ? "bg-teal-light" : "bg-paper"}`}>
+        <svg
+          viewBox="0 0 100 100"
+          className="h-28 w-28"
+          style={{ transform: `rotate(${arrowRot}deg)`, transition: "transform .15s ease" }}
+        >
+          <path d="M50 6 L74 62 L50 50 L26 62 Z" fill={pointingUp ? "#1D9E75" : "#D85A30"} />
+        </svg>
       </div>
-      <div className="mt-3 flex gap-6 font-bold text-teal-dark">
-        <div className="text-center">
-          <b className="block text-[22px] text-coral">{bearing != null ? `${Math.round(bearing)}°` : "—"}</b>koers
-        </div>
-        <div className="text-center">
-          <b className="block text-[22px] text-coral">{distance != null ? (distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`) : "—"}</b>afstand
-        </div>
+      <div className="mt-3 text-center">
+        <b className="block text-[26px] text-coral">
+          {distance != null ? (distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`) : "—"}
+        </b>
+        <span className="text-sm text-polder-grey">tot het punt</span>
       </div>
       {needPerm ? (
         <button className="btn btn-ghost mt-2 text-sm" onClick={enableCompass}>
-          🧭 Kompas activeren
+          🧭 Richtingspijl activeren
         </button>
       ) : (
         <p className="mt-2 text-center text-xs text-polder-grey">
           {err
-            ? "Zet gps aan om koers en afstand te zien."
+            ? "Zet gps aan om de richting en afstand te zien."
             : heading != null
-              ? "Draai tot de rode pijl omhoog wijst en loop die kant op 🧭"
+              ? pointingUp
+                ? "Goed zo — loop rechtdoor deze kant op! 🚶"
+                : "Draai tot de pijl recht omhoog wijst en loop die kant op."
               : pos
-                ? "Live berekend vanaf jullie locatie 📍"
+                ? "De pijl wijst de richting naar het punt 📍"
                 : "📡 Locatie bepalen…"}
         </p>
       )}

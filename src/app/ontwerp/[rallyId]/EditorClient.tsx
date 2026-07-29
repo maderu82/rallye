@@ -90,6 +90,7 @@ export default function EditorClient({
   liveTeams,
   teamActivity,
   teamSpeeds,
+  schemaBehind,
 }: {
   rally: Rally;
   points: Point[];
@@ -98,6 +99,7 @@ export default function EditorClient({
   liveTeams: LiveTeam[];
   teamActivity: Record<string, ActivityItem[]>;
   teamSpeeds: Record<string, LegSpeed[]>;
+  schemaBehind: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -166,6 +168,11 @@ export default function EditorClient({
 
   return (
     <main className="mx-auto max-w-[1280px] px-5 py-6">
+      {schemaBehind ? (
+        <div className="mb-4 rounded-soft border-2 border-[#D85A30] bg-coral-light p-3 text-sm text-coral">
+          ⚠️ <b>De database loopt achter.</b> Nieuwe functies (o.a. spelleider, video, foto-navigatie, snelheidscontrole) werken pas als je de laatste <code>supabase/setup.sql</code> draait in de SQL-editor van je Supabase-project. Daarna verdwijnt deze melding.
+        </div>
+      ) : null}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <Link href="/ontwerp" className="btn btn-ghost">← Overzicht</Link>
         <input
