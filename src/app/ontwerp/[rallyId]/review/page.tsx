@@ -15,6 +15,7 @@ type ReviewItem = {
   typeLabel: string;
   createdAt: string;
   photoUrl: string | null;
+  downloadUrl: string | null;
   isVideo: boolean;
 };
 
@@ -53,9 +54,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ rallyId
   const items: ReviewItem[] = await Promise.all(
     (events ?? []).map(async (e) => {
       let photoUrl: string | null = null;
+      let downloadUrl: string | null = null;
       if (e.photo_path) {
-        const { data } = await admin.storage.from("proof-photos").createSignedUrl(e.photo_path, 3600);
-        photoUrl = data?.signedUrl ?? null;
+        const fname = e.photo_path.split("/").pop() || (VIDEO_RE.test(e.photo_path) ? "inzending.mp4" : "inzending.jpg");
+        // one signed URL for inline preview, one that forces a download.
+        const [{ data: view }, { data: dl }] = await Promise.all([
+          admin.storage.from("proof-photos").createSignedUrl(e.photo_path, 3600),
+          admin.storage.from("proof-photos").createSignedUrl(e.photo_path, 3600, { download: fname }),
+        ]);
+        photoUrl = view?.signedUrl ?? null;
+        downloadUrl = dl?.signedUrl ?? null;
       }
       const a = e.assignment_id ? asg.get(e.assignment_id) : undefined;
       return {
@@ -66,6 +74,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ rallyId
         typeLabel: a ? BLOCK_BY_TYPE[a.type as keyof typeof BLOCK_BY_TYPE].label : "Inzending",
         createdAt: new Date(e.created_at).toLocaleString("nl-NL"),
         photoUrl,
+        downloadUrl,
         isVideo: e.photo_path ? VIDEO_RE.test(e.photo_path) : false,
       };
     }),
@@ -100,7 +109,12 @@ export default async function ReviewPage({ params }: { params: Promise<{ rallyId
               ) : (
                 <div className="mb-2 rounded-soft bg-paper p-3 text-center text-xs text-polder-grey">Geen bijlage</div>
               )}
-              <p className="mb-2 text-xs text-polder-grey">{it.createdAt}</p>
+              <div className="mb-2 flex items-center gap-2">
+                <p className="text-xs text-polder-grey">{it.createdAt}</p>
+                {it.downloadUrl ? (
+                  <a href={it.downloadUrl} className="ml-auto chip chip-teal">⬇️ {it.isVideo ? "Video" : "Foto"} downloaden</a>
+                ) : null}
+              </div>
               <ReviewForm rallyId={rallyId} eventId={it.id} awarded={it.awarded} />
             </div>
           ))}
