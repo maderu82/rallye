@@ -77,6 +77,9 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
       score: agg.get(t.id)?.score ?? 0,
       hints: agg.get(t.id)?.hints ?? 0,
       created_at: t.created_at,
+      last_lat: t.last_lat,
+      last_lng: t.last_lng,
+      last_gps_at: t.last_gps_at,
     }))
     .sort((a, b) => b.score - a.score);
 

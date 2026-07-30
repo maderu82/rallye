@@ -86,6 +86,9 @@ export interface Team {
   session_token: string;
   current_index: number;
   finished_at: string | null;
+  last_lat: number | null;
+  last_lng: number | null;
+  last_gps_at: string | null;
   created_at: string;
 }
 

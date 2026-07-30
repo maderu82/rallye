@@ -80,6 +80,9 @@ type LiveTeam = {
   score: number;
   hints: number;
   created_at: string;
+  last_lat: number | null;
+  last_lng: number | null;
+  last_gps_at: string | null;
 };
 type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; isVideo: boolean; when: string };
 type LegSpeed = { from: string; to: string; kmh: number; limit: number; over: boolean };
@@ -979,6 +982,7 @@ function LiveView({
     const channel = supabase
       .channel(`live:${rallyId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "team_scores", filter: `rally_id=eq.${rallyId}` }, onRefresh)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "teams", filter: `rally_id=eq.${rallyId}` }, onRefresh)
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
@@ -994,7 +998,9 @@ function LiveView({
           points={points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, label: labelOf(p), kind: p.kind }))}
           teams={teams
             .map((t, i): MapTeam | null => {
-              const pos = geoPos(points, Math.min(1, t.current_index / maxIndex));
+              // prefer the team's real reported GPS; fall back to a progress estimate
+              const real = t.last_lat != null && t.last_lng != null ? ([t.last_lat, t.last_lng] as [number, number]) : null;
+              const pos = real ?? geoPos(points, Math.min(1, t.current_index / maxIndex));
               return pos ? { id: t.id, name: t.name, lat: pos[0], lng: pos[1], color: TEAM_COLORS[i % 4] } : null;
             })
             .filter((x): x is MapTeam => x !== null)}
@@ -1055,7 +1061,7 @@ function LiveView({
                       <span className="text-xs text-polder-grey">{open ? "▲" : "▼"}</span>
                     </div>
                     <small className="mt-1 block text-xs text-polder-grey">
-                      {t.finished ? "🏁 Gefinisht" : `Onderweg · punt ${t.current_index}`} · {t.hints} hint{t.hints === 1 ? "" : "s"} · {items.length} antwoord{items.length === 1 ? "" : "en"}
+                      {t.finished ? "🏁 Gefinisht" : `Onderweg · punt ${t.current_index}`} · {t.hints} hint{t.hints === 1 ? "" : "s"} · {items.length} antwoord{items.length === 1 ? "" : "en"} · {t.last_gps_at ? `📍 gps ${gpsAge(t.last_gps_at)}` : "📍 geen gps"}
                     </small>
                     <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-polder-line">
                       <i className="block h-full rounded" style={{ width: `${Math.round(Math.min(1, t.current_index / maxIndex) * 100)}%`, background: t.finished ? "#D85A30" : "#1D9E75" }} />
@@ -1126,6 +1132,14 @@ function LiveView({
 
 // ── geometry helpers ─────────────────────────────────────────────────────────
 // Interpolated lat/lng position a fraction t along the route (points with gps).
+// Relative age of a timestamp, compact ("net", "3 min", "2 u").
+function gpsAge(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 30) return "net";
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return `${Math.round(s / 3600)} u`;
+}
+
 function geoPos(points: Point[], t: number): [number, number] | null {
   const pts = points.filter((p) => p.lat != null && p.lng != null) as (Point & { lat: number; lng: number })[];
   if (pts.length === 0) return null;

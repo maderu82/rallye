@@ -99,10 +99,16 @@ create table if not exists public.teams (
   session_token  text not null default encode(gen_random_bytes(18), 'hex'),
   current_index  int  not null default 0,
   finished_at    timestamptz,
+  last_lat       numeric(9,6),
+  last_lng       numeric(9,6),
+  last_gps_at    timestamptz,
   created_at     timestamptz not null default now()
 );
 create index if not exists teams_rally_idx on public.teams (rally_id);
 create index if not exists teams_token_idx on public.teams (session_token);
+alter table public.teams add column if not exists last_lat numeric(9,6);
+alter table public.teams add column if not exists last_lng numeric(9,6);
+alter table public.teams add column if not exists last_gps_at timestamptz;
 
 -- ─── team_events ─────────────────────────────────────────────────────────────
 create table if not exists public.team_events (
@@ -255,7 +261,7 @@ create policy team_scores_read on public.team_scores
     exists (select 1 from public.rallies r where r.id = rally_id and (r.published or r.owner_id = auth.uid()))
   );
 
--- ── publish team_scores to Supabase Realtime ────────────────────────────────
+-- ── publish team_scores + teams (live gps) to Supabase Realtime ─────────────
 do $$
 begin
   if not exists (
@@ -263,6 +269,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'team_scores'
   ) then
     alter publication supabase_realtime add table public.team_scores;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'teams'
+  ) then
+    alter publication supabase_realtime add table public.teams;
   end if;
 exception when undefined_object then null;
 end $$;

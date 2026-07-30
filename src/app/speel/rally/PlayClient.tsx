@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
-import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
 import { NEXT_STEP_COST } from "@/lib/play/constants";
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
@@ -141,6 +141,24 @@ export default function PlayClient({
   useEffect(() => {
     requestLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Report the team's live position to the server (throttled) so the organizer's
+  // live view shows where the team actually is.
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
+    let last = 0;
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        const now = Date.now();
+        if (now - last < 15000) return; // at most every 15s
+        last = now;
+        void reportPosition(p.coords.latitude, p.coords.longitude);
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
   }, []);
 
   // Live leaderboard via Supabase Realtime: subscribe to team_scores changes for
@@ -962,14 +980,15 @@ function GpsUnlock({ point, testMode, hideDistance, onUnlock, toast }: { point: 
           toast("📍 Op de plek — de vraag is ontgrendeld!");
           onUnlock();
         } else {
-          toast("🔍 Nog niet op de juiste plek — volg de navigatie verder.");
+          const shown = d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`;
+          toast(`🔍 Nog ${shown} van het punt (±${Math.round(pos.coords.accuracy || 0)} m gps) — volg de navigatie verder.`);
         }
       },
       () => {
         setChecking(false);
         toast("📡 Geen gps-fix — zet locatie aan en probeer opnieuw.");
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }, // force a fresh fix
     );
   }
 

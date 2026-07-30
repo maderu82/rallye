@@ -396,6 +396,18 @@ export async function buyDigit(assignmentId: string): Promise<ActionResult & { r
   return { ok: true, complete: false, feedback: `🔢 Cijfer ${already + 1} gekocht.`, score: await scoreOf(db, team.id), revealed };
 }
 
+// ── report the team's live GPS position (for the organizer's live view) ──────
+export async function reportPosition(lat: number, lng: number): Promise<void> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  const ctx = await currentTeam();
+  if (!ctx) return;
+  const { team, db } = ctx;
+  await db
+    .from("teams")
+    .update({ last_lat: lat, last_lng: lng, last_gps_at: new Date().toISOString() })
+    .eq("id", team.id);
+}
+
 // ── buy the next photo/waypoint (foto-navigatie) for a fixed point cost ───────
 export async function buyNextStep(legId: string): Promise<{ ok: boolean; score: number; error?: string }> {
   const ctx = await currentTeam();
