@@ -90,6 +90,30 @@ export async function updateRallySpeedLimit(rallyId: string, speedLimit: number 
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+// ── team management (organizer) ──────────────────────────────────────────────
+async function requireOwner(rallyId: string) {
+  const db = await createClient();
+  const user = await requireUser(db);
+  const { data: rally } = await db.from("rallies").select("id,owner_id").eq("id", rallyId).maybeSingle();
+  if (!rally || rally.owner_id !== user.id) throw new Error("Geen toegang tot deze rally.");
+}
+
+/** Remove one team (its events/badges/scores cascade). */
+export async function deleteTeam(rallyId: string, teamId: string) {
+  await requireOwner(rallyId);
+  const admin = createAdminClient();
+  await admin.from("teams").delete().eq("id", teamId).eq("rally_id", rallyId);
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
+/** Wipe all teams of a rally clean (fresh start). */
+export async function clearTeams(rallyId: string) {
+  await requireOwner(rallyId);
+  const admin = createAdminClient();
+  await admin.from("teams").delete().eq("rally_id", rallyId);
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 export async function deleteRally(rallyId: string) {
   const db = await createClient();
   await requireUser(db);

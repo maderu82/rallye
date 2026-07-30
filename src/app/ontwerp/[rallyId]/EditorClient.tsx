@@ -24,9 +24,11 @@ import { deriveRoadbook, fetchRoadRoute, roadbookDirsFromGeom } from "@/lib/geo"
 import {
   addLeg,
   addPoint,
+  clearTeams,
   createRoutePhotoUpload,
   deletePoint,
   deleteRally,
+  deleteTeam,
   importGpx,
   movePointTo,
   renameRally,
@@ -370,7 +372,19 @@ export default function EditorClient({
           </div>
         </div>
       ) : (
-        <LiveView rallyId={rally.id} points={points} teams={liveTeams} activity={teamActivity} speeds={teamSpeeds} defaultLimit={rally.speed_limit} onSetLimit={(v) => run(() => updateRallySpeedLimit(rally.id, v))} labelOf={labelOf} onRefresh={() => router.refresh()} />
+        <LiveView
+          rallyId={rally.id}
+          points={points}
+          teams={liveTeams}
+          activity={teamActivity}
+          speeds={teamSpeeds}
+          defaultLimit={rally.speed_limit}
+          onSetLimit={(v) => run(() => updateRallySpeedLimit(rally.id, v))}
+          onDeleteTeam={(id) => run(() => deleteTeam(rally.id, id))}
+          onClearTeams={() => run(() => clearTeams(rally.id))}
+          labelOf={labelOf}
+          onRefresh={() => router.refresh()}
+        />
       )}
     </main>
   );
@@ -907,6 +921,8 @@ function LiveView({
   speeds,
   defaultLimit,
   onSetLimit,
+  onDeleteTeam,
+  onClearTeams,
   labelOf,
   onRefresh,
 }: {
@@ -917,6 +933,8 @@ function LiveView({
   speeds: Record<string, LegSpeed[]>;
   defaultLimit: number | null;
   onSetLimit: (v: number | null) => void;
+  onDeleteTeam: (teamId: string) => void;
+  onClearTeams: () => void;
   labelOf: (p: Point) => string;
   onRefresh: () => void;
 }) {
@@ -975,7 +993,17 @@ function LiveView({
         </div>
       </div>
       <div className="card">
-        <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-teal-dark">Ingeschreven teams ({teams.length})</h3>
+        <div className="mb-1 flex items-center gap-2">
+          <h3 className="flex-1 text-sm font-bold uppercase tracking-wide text-teal-dark">Ingeschreven teams ({teams.length})</h3>
+          {teams.length ? (
+            <button
+              className="btn btn-danger px-2 py-1 text-xs"
+              onClick={() => { if (confirm(`Alle ${teams.length} teams verwijderen? Hun scores en antwoorden verdwijnen.`)) onClearTeams(); }}
+            >
+              🧹 Alle teams wissen
+            </button>
+          ) : null}
+        </div>
         <p className="mb-2.5 text-xs text-polder-grey">Klik een team open om hun antwoorden en foto&apos;s te zien.</p>
         {teams.length ? (
           <div className="space-y-2">
@@ -1044,6 +1072,12 @@ function LiveView({
                         ))
                       )}
                       <Link href={`/ontwerp/${rallyId}/review`} className="btn btn-ghost w-full text-xs">🔎 Naar nakijken/corrigeren</Link>
+                      <button
+                        className="btn btn-danger w-full text-xs"
+                        onClick={() => { if (confirm(`Team "${t.name}" verwijderen? Hun scores en antwoorden verdwijnen.`)) onDeleteTeam(t.id); }}
+                      >
+                        🗑️ Verwijder team &quot;{t.name}&quot;
+                      </button>
                     </div>
                   ) : null}
                 </div>

@@ -25,10 +25,16 @@ function num(v: unknown, fallback = 0): number {
 }
 
 function normalize(s: unknown): string {
+  // Ignore case + accents + surrounding punctuation so answers match forgivingly
+  // ("Café!" === "cafe"). Interior spacing is collapsed to a single space.
   return String(s ?? "")
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, " ");
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // For codes/locks: ignore case and all spaces/hyphens, so "BRUG-2024",

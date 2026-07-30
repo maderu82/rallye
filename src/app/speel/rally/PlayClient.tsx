@@ -460,7 +460,7 @@ function LegNav({
         {nav.icon} {nav.label.split(" (")[0]}
       </h3>
 
-      {["turn", "routebook", "cryptic"].includes(leg.nav_mode) && (leg.turn_steps ?? []).length > 0 ? (
+      {["turn", "routebook"].includes(leg.nav_mode) && (leg.turn_steps ?? []).length > 0 ? (
         <p className="mb-2 text-[11px] text-polder-grey">Tik een stap aan om &apos;m af te vinken zodra je &apos;m gepasseerd bent.</p>
       ) : null}
 
@@ -525,24 +525,11 @@ function LegNav({
         )
       ) : null}
 
-      {/* Cryptische route: only the riddle text — no arrow, no distance */}
-      {leg.nav_mode === "cryptic" ? (
-        <ol className="space-y-2">
-          {(leg.turn_steps ?? []).map((s, i) => (
-            <li key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-start gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5 ${checked.has(i) ? "opacity-60" : ""}`}>
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple text-xs font-bold text-white">{i + 1}</span>
-              <div className={`flex-1 font-semibold text-ink ${checked.has(i) ? "line-through" : ""}`}>{s.note || "…"}</div>
-              {checkDot(i)}
-            </li>
-          ))}
-          <li className="flex items-center gap-2 rounded-soft bg-teal-light p-2 text-[13px] text-teal-dark">
-            🕵️ Los de aanwijzingen onderweg op — de opdracht opent zodra je op de bestemming bent.
-          </li>
-        </ol>
-      ) : null}
+      {/* Cryptische route: one clue at a time; must reach the spot to reveal the next */}
+      {leg.nav_mode === "cryptic" ? <SequentialNav variant="cryptic" leg={leg} testMode={testMode} onScored={onScored} toast={toast} /> : null}
 
       {/* Foto-navigatie: one photo at a time; geofence-confirm arrival to advance */}
-      {leg.nav_mode === "photo_nav" ? <PhotoNavSteps leg={leg} testMode={testMode} onScored={onScored} toast={toast} /> : null}
+      {leg.nav_mode === "photo_nav" ? <SequentialNav variant="photo" leg={leg} testMode={testMode} onScored={onScored} toast={toast} /> : null}
 
       {leg.nav_mode === "map" ? (
         <p className="text-sm leading-relaxed text-polder-grey">
@@ -593,18 +580,22 @@ function GameMasterInput({
 // ── foto-navigatie: one photo at a time; confirm arrival within 100 m ────────
 const PHOTO_GEOFENCE_M = 100;
 
-function PhotoNavSteps({
+function SequentialNav({
   leg,
+  variant,
   testMode,
   onScored,
   toast,
 }: {
   leg: Leg;
+  variant: "photo" | "cryptic";
   testMode: boolean;
   onScored: (score: number) => void;
   toast: (m: string) => void;
 }) {
-  const photos = leg.turn_steps ?? [];
+  const isPhoto = variant === "photo";
+  const noun = isPhoto ? "foto" : "aanwijzing";
+  const steps = leg.turn_steps ?? [];
   const pts = leg.turn_points ?? [];
   const radius = leg.photo_radius != null && leg.photo_radius > 0 ? leg.photo_radius : PHOTO_GEOFENCE_M;
   const cost = leg.photo_buy_cost != null && leg.photo_buy_cost > 0 ? leg.photo_buy_cost : NEXT_STEP_COST;
@@ -612,41 +603,41 @@ function PhotoNavSteps({
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Restore progress so a reload doesn't send the team back to photo 1.
+  // Restore progress so a reload doesn't send the team back to step 1.
   useEffect(() => {
-    const v = Number(localStorage.getItem(`photonav:${leg.id}`) || 0);
+    const v = Number(localStorage.getItem(`seqnav:${leg.id}`) || 0);
     if (v > 0) setIdx(v);
   }, [leg.id]);
   const save = (n: number) => {
     setIdx(n);
     try {
-      localStorage.setItem(`photonav:${leg.id}`, String(n));
+      localStorage.setItem(`seqnav:${leg.id}`, String(n));
     } catch {}
   };
 
-  if (photos.length === 0) {
-    return <p className="text-sm text-polder-grey">Nog geen foto&apos;s ingesteld voor dit traject.</p>;
+  if (steps.length === 0) {
+    return <p className="text-sm text-polder-grey">Nog geen {noun}en ingesteld voor dit traject.</p>;
   }
 
-  if (idx >= photos.length) {
+  if (idx >= steps.length) {
     return (
       <div className="rounded-soft bg-teal-light p-3 text-center text-sm text-teal-dark">
-        📷 Alle foto&apos;s gevonden! Ga nu naar de eindbestemming — de opdracht opent zodra je er bent.
+        {isPhoto ? "📷" : "🕵️"} Alle {noun}en gevonden! Ga nu naar de eindbestemming — de opdracht opent zodra je er bent.
       </div>
     );
   }
 
-  const cur = photos[idx];
+  const cur = steps[idx];
   const loc = pts[idx];
 
   function confirmHere() {
     if (testMode) {
-      toast("🧪 Test: volgende foto vrijgegeven.");
+      toast(`🧪 Test: volgende ${noun} vrijgegeven.`);
       save(idx + 1);
       return;
     }
     if (!loc || loc.lat == null || loc.lng == null) {
-      // no coordinates configured for this photo → can't geofence, just advance
+      // no coordinates configured for this step → can't geofence, just advance
       save(idx + 1);
       return;
     }
@@ -661,7 +652,7 @@ function PhotoNavSteps({
         const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { lat: loc.lat as number, lng: loc.lng as number });
         // allow for gps inaccuracy but never reveal the distance to the player
         if (d <= Math.max(radius, pos.coords.accuracy || 0)) {
-          toast("📍 Goed gevonden — volgende foto!");
+          toast(`📍 Goed gevonden — volgende ${noun}!`);
           save(idx + 1);
         } else {
           toast("🔍 Nog niet op de juiste plek — blijf zoeken.");
@@ -684,30 +675,34 @@ function PhotoNavSteps({
       return;
     }
     onScored(r.score);
-    toast(`🛒 Volgende foto vrijgekocht (−${cost}).`);
+    toast(`🛒 Volgende ${noun} vrijgekocht (−${cost}).`);
     save(idx + 1);
   }
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-[13px] font-bold text-teal-dark">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal text-xs text-white">{idx + 1}</span>
-        Foto {idx + 1} van {photos.length} — zoek deze plek
+        <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs text-white ${isPhoto ? "bg-teal" : "bg-purple"}`}>{idx + 1}</span>
+        {isPhoto ? "Foto" : "Aanwijzing"} {idx + 1} van {steps.length} — {isPhoto ? "zoek deze plek" : "los op en ga erheen"}
       </div>
-      {cur.photo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={cur.photo} alt={`Herkenningspunt ${idx + 1}`} className="w-full rounded-soft object-cover" />
+      {isPhoto ? (
+        cur.photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={cur.photo} alt={`Herkenningspunt ${idx + 1}`} className="w-full rounded-soft object-cover" />
+        ) : (
+          <div className="rounded-soft bg-paper p-4 text-center text-xs text-polder-grey">Geen foto ingesteld</div>
+        )
       ) : (
-        <div className="rounded-soft bg-paper p-4 text-center text-xs text-polder-grey">Geen foto ingesteld</div>
+        <div className="rounded-soft border-2 border-polder-line bg-white p-3 text-base font-semibold text-ink">{cur.note || "…"}</div>
       )}
-      {cur.note ? <p className="text-[13px] text-polder-grey">{cur.note}</p> : null}
+      {isPhoto && cur.note ? <p className="text-[13px] text-polder-grey">{cur.note}</p> : null}
       <button className="btn-demo w-full" disabled={checking} onClick={confirmHere}>
         {checking ? "📡 Locatie controleren…" : "📍 We zijn er!"}
       </button>
       <button className="btn btn-ghost w-full text-sm" disabled={busy} onClick={buyNext}>
-        {busy ? "Bezig…" : `🛒 Volgende foto afkopen (−${cost} ptn)`}
+        {busy ? "Bezig…" : `🛒 Volgende ${noun} afkopen (−${cost} ptn)`}
       </button>
-      <p className="text-[11px] text-polder-grey">Je moet binnen ±{radius} m van de plek staan. Geen idee? Koop de volgende foto af — kan alleen als je genoeg punten hebt.</p>
+      <p className="text-[11px] text-polder-grey">Je moet binnen ±{radius} m van de plek staan. Kom je er niet uit? Koop de volgende {noun} af — kan alleen als je genoeg punten hebt.</p>
     </div>
   );
 }
