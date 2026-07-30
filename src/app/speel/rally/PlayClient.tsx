@@ -756,6 +756,15 @@ function SequentialNav({
 type OrientationEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 type DOEWithPerm = { requestPermission?: () => Promise<"granted" | "denied"> };
 
+// Current screen rotation in degrees (for Android absolute-heading correction).
+function screenAngle(): number {
+  if (typeof window === "undefined") return 0;
+  const a = window.screen?.orientation?.angle;
+  if (typeof a === "number") return a;
+  const legacy = (window as unknown as { orientation?: number }).orientation;
+  return typeof legacy === "number" ? legacy : 0;
+}
+
 function LiveCompass({ target }: { target: Point }) {
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
   const [err, setErr] = useState(false);
@@ -780,9 +789,25 @@ function LiveCompass({ target }: { target: Point }) {
     const handler = (e: Event) => {
       const oe = e as OrientationEvent;
       let h: number | null = null;
-      if (typeof oe.webkitCompassHeading === "number") h = oe.webkitCompassHeading;
-      else if (typeof oe.alpha === "number") h = (360 - oe.alpha) % 360;
-      if (h != null && !Number.isNaN(h)) setHeading(h);
+      if (typeof oe.webkitCompassHeading === "number" && !Number.isNaN(oe.webkitCompassHeading)) {
+        // iOS: a true compass heading (0 = north, clockwise).
+        h = oe.webkitCompassHeading;
+      } else if (oe.absolute === true && typeof oe.alpha === "number") {
+        // Android absolute orientation: convert alpha → compass heading and
+        // correct for the screen rotation. Ignore NON-absolute events (their
+        // alpha is relative to an arbitrary start → jumps around).
+        h = (360 - oe.alpha + screenAngle()) % 360;
+      } else {
+        return; // relative / unusable event — skip it entirely
+      }
+      if (h == null || Number.isNaN(h)) return;
+      const next = (h + 360) % 360;
+      // circular low-pass smoothing to stop the arrow/colour from flickering
+      setHeading((prev) => {
+        if (prev == null) return next;
+        const diff = ((next - prev + 540) % 360) - 180;
+        return (prev + diff * 0.25 + 360) % 360;
+      });
     };
     window.addEventListener("deviceorientationabsolute", handler, true);
     window.addEventListener("deviceorientation", handler, true);
