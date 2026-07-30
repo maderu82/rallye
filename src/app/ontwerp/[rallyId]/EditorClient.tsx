@@ -865,8 +865,13 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                 </label>
               </div>
             ) : null;
+            const warn = vc.showPhoto && !s?.photo
+              ? "⚠️ Nog geen foto bij dit punt — de speler ziet dan niets om te herkennen."
+              : variant === "cryptic" && !(s?.note ?? "").trim()
+                ? "⚠️ Nog geen aanwijzing bij dit punt — vul de cryptische hint in."
+                : null;
             return (
-              <div key={i} className="rounded-soft border-2 border-polder-line p-2">
+              <div key={i} className={`rounded-soft border-2 p-2 ${warn ? "border-[#D85A30] bg-coral-light" : "border-polder-line"}`}>
                 <div className="mb-1.5 flex items-center gap-2">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-bold text-white">{i + 1}</span>
                   {vc.showDist ? (
@@ -876,6 +881,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                   ) : null}
                   <button className="btn btn-danger ml-auto px-2 py-1 text-xs" onClick={() => deletePointAt(i)}>✕ punt</button>
                 </div>
+                {warn ? <p className="mb-1.5 text-[11px] font-semibold text-coral">{warn}</p> : null}
                 {photoBlock}
                 {vc.arrowPrimary ? (
                   <>
