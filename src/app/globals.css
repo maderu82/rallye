@@ -100,6 +100,18 @@ body {
   background: theme("colors.coral.DEFAULT");
 }
 
+/* ── per-rally branding (player app) ─────────────────────────────────────── */
+.branded .btn-primary {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+.branded .progress span.done {
+  background: var(--brand);
+}
+.branded .input:focus {
+  --tw-ring-color: color-mix(in srgb, var(--brand) 40%, transparent);
+}
+
 /* ── compass ─────────────────────────────────────────────────────────────── */
 .compass {
   width: 170px;

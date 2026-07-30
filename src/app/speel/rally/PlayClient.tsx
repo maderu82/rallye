@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
@@ -8,6 +8,17 @@ import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay
 import { NEXT_STEP_COST } from "@/lib/play/constants";
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
+
+// Pick a readable text color (dark or white) for a given brand background.
+function readableInk(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  // relative luminance (sRGB) → dark ink on light colors, white on dark
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.62 ? "#123B2E" : "#ffffff";
+}
 
 // Max length for a video-opdracht: keeps uploads small (fits a default bucket).
 const MAX_VIDEO_SEC = 10;
@@ -223,8 +234,15 @@ export default function PlayClient({
     ? "Finish"
     : `Waypoint ${step + 1} van ${waypoints.length}`;
 
+  // Branding: theme the primary button + progress with the rally color, and
+  // pick a readable ink color (dark on a light brand, white on a dark one).
+  const brand = state.rally.brand_color;
+  const brandStyle = brand
+    ? ({ "--brand": brand, "--brand-ink": readableInk(brand) } as CSSProperties)
+    : undefined;
+
   return (
-    <main className="mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col">
+    <main className={`mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col ${brand ? "branded" : ""}`} style={brandStyle}>
       {testMode ? (
         <div className="flex items-center justify-center gap-3 bg-[#FFF4D6] px-4 py-1.5 text-center text-xs font-bold text-[#7A5D00]">
           <span>🧪 Testmodus — hulpknoppen zijn zichtbaar; deelnemers zien deze niet.</span>
