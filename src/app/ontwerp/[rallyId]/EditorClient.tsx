@@ -87,6 +87,7 @@ type LiveTeam = {
 };
 type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; isVideo: boolean; when: string };
 type LegSpeed = { from: string; to: string; kmh: number; limit: number; over: boolean };
+type TeamTrail = { path: [number, number][]; peakKmh: number | null };
 type Sel = { kind: "point" | "leg"; id: string } | null;
 
 export default function EditorClient({
@@ -97,6 +98,7 @@ export default function EditorClient({
   liveTeams,
   teamActivity,
   teamSpeeds,
+  teamTrails,
   schemaBehind,
 }: {
   rally: Rally;
@@ -106,6 +108,7 @@ export default function EditorClient({
   liveTeams: LiveTeam[];
   teamActivity: Record<string, ActivityItem[]>;
   teamSpeeds: Record<string, LegSpeed[]>;
+  teamTrails: Record<string, TeamTrail>;
   schemaBehind: boolean;
 }) {
   const router = useRouter();
@@ -411,6 +414,7 @@ export default function EditorClient({
           teams={liveTeams}
           activity={teamActivity}
           speeds={teamSpeeds}
+          trails={teamTrails}
           defaultLimit={rally.speed_limit}
           onSetLimit={(v) => run(() => updateRallySpeedLimit(rally.id, v))}
           onDeleteTeam={(id) => run(() => deleteTeam(rally.id, id))}
@@ -1006,6 +1010,7 @@ function LiveView({
   teams,
   activity,
   speeds,
+  trails,
   defaultLimit,
   onSetLimit,
   onDeleteTeam,
@@ -1018,6 +1023,7 @@ function LiveView({
   teams: LiveTeam[];
   activity: Record<string, ActivityItem[]>;
   speeds: Record<string, LegSpeed[]>;
+  trails: Record<string, TeamTrail>;
   defaultLimit: number | null;
   onSetLimit: (v: number | null) => void;
   onDeleteTeam: (teamId: string) => void;
@@ -1056,6 +1062,9 @@ function LiveView({
               return pos ? { id: t.id, name: t.name, lat: pos[0], lng: pos[1], color: TEAM_COLORS[i % 4] } : null;
             })
             .filter((x): x is MapTeam => x !== null)}
+          trails={teams
+            .map((t, i) => ({ color: TEAM_COLORS[i % 4], path: trails[t.id]?.path ?? [] }))
+            .filter((tr) => tr.path.length >= 2)}
         />
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <div className="rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
@@ -1101,6 +1110,8 @@ function LiveView({
               const items = activity[t.id] ?? [];
               const legSpeeds = speeds[t.id] ?? [];
               const speeding = legSpeeds.filter((s) => s.over);
+              const peak = trails[t.id]?.peakKmh ?? null;
+              const peakOver = peak != null && defaultLimit != null && peak > defaultLimit;
               const open = openTeam === t.id;
               return (
                 <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${speeding.length ? "border-[#D85A30]" : t.finished ? "border-coral" : "border-teal"}`}>
@@ -1109,6 +1120,7 @@ function LiveView({
                       <span className="inline-block h-3 w-3 rounded-full" style={{ background: TEAM_COLORS[i % 4] }} />
                       {t.name}
                       {speeding.length ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]">⚠️ {speeding.length}×</span> : null}
+                      {peak != null ? <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${peakOver ? "bg-[#FDECE7] text-[#D85A30]" : "bg-teal-light text-teal-dark"}`}>🏎️ {peak} km/u</span> : null}
                       <span className="ml-auto text-teal-dark">{t.score} ptn</span>
                       <span className="text-xs text-polder-grey">{open ? "▲" : "▼"}</span>
                     </div>

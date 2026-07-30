@@ -27,12 +27,15 @@ export type MapTeam = {
   color: string;
 };
 
+export type MapTrail = { color: string; path: [number, number][] };
+
 export interface RallyMapProps {
   points: MapPoint[];
   selectedId?: string | null;
   editable?: boolean;
   addMode?: boolean;
   teams?: MapTeam[];
+  trails?: MapTrail[];
   height?: number;
   onAddPoint?: (lat: number, lng: number) => void;
   onSelectPoint?: (id: string) => void;
@@ -67,6 +70,7 @@ export default function RallyMap({
   editable = false,
   addMode = false,
   teams = [],
+  trails = [],
   height = 420,
   onAddPoint,
   onSelectPoint,
@@ -155,6 +159,13 @@ export default function RallyMap({
       }
     }
 
+    // breadcrumb trails (driven route per team)
+    for (const tr of trails) {
+      if (tr.path.length >= 2) {
+        L.polyline(tr.path, { color: tr.color, weight: 3, opacity: 0.7 }).addTo(layer);
+      }
+    }
+
     // team markers (live view)
     for (const t of teams) {
       L.marker([t.lat, t.lng], { icon: teamIcon(t), interactive: false }).addTo(layer);
@@ -166,7 +177,7 @@ export default function RallyMap({
       map.fitBounds(bounds.pad(0.3), { maxZoom: 15 });
       fittedRef.current = true;
     }
-  }, [points, teams, selectedId, editable, onSelectPoint, onMovePoint]);
+  }, [points, teams, trails, selectedId, editable, onSelectPoint, onMovePoint]);
 
   return <div ref={containerRef} style={{ height, width: "100%", borderRadius: 12, zIndex: 0 }} />;
 }

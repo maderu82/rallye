@@ -164,7 +164,7 @@ export default function PlayClient({
         const now = Date.now();
         if (now - last < 15000) return; // at most every 15s
         last = now;
-        void reportPosition(p.coords.latitude, p.coords.longitude);
+        void reportPosition(p.coords.latitude, p.coords.longitude, p.coords.speed, p.coords.accuracy);
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },

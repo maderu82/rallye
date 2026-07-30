@@ -397,15 +397,24 @@ export async function buyDigit(assignmentId: string): Promise<ActionResult & { r
 }
 
 // ── report the team's live GPS position (for the organizer's live view) ──────
-export async function reportPosition(lat: number, lng: number): Promise<void> {
+// Updates the team's last position AND appends a breadcrumb (with speed) so the
+// organizer can see the driven route and monitor speed for safety.
+export async function reportPosition(
+  lat: number,
+  lng: number,
+  speed?: number | null,
+  accuracy?: number | null,
+): Promise<void> {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
   const ctx = await currentTeam();
   if (!ctx) return;
   const { team, db } = ctx;
-  await db
-    .from("teams")
-    .update({ last_lat: lat, last_lng: lng, last_gps_at: new Date().toISOString() })
-    .eq("id", team.id);
+  const spd = typeof speed === "number" && Number.isFinite(speed) && speed >= 0 ? speed : null;
+  const acc = typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null;
+  await Promise.all([
+    db.from("teams").update({ last_lat: lat, last_lng: lng, last_gps_at: new Date().toISOString() }).eq("id", team.id),
+    db.from("team_positions").insert({ team_id: team.id, rally_id: team.rally_id, lat, lng, speed: spd, accuracy: acc }),
+  ]);
 }
 
 // ── buy the next photo/waypoint (foto-navigatie) for a fixed point cost ───────

@@ -15,6 +15,8 @@ export type LegSpeed = {
   over: boolean;
 };
 
+export type TeamTrail = { path: [number, number][]; peakKmh: number | null };
+
 export type ActivityItem = {
   label: string;
   answer: string;
@@ -168,6 +170,27 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
     schemaBehind = true;
   }
 
+  // Breadcrumb trails + peak speed per team (safety monitoring / route replay).
+  const teamTrails: Record<string, TeamTrail> = {};
+  const { data: positions } = await admin
+    .from("team_positions")
+    .select("team_id,lat,lng,speed")
+    .eq("rally_id", rallyId)
+    .order("created_at")
+    .limit(8000);
+  for (const p of (positions ?? []) as { team_id: string; lat: number; lng: number; speed: number | null }[]) {
+    const t = (teamTrails[p.team_id] ??= { path: [], peakKmh: null });
+    t.path.push([p.lat, p.lng]);
+    if (p.speed != null) {
+      const kmh = p.speed * 3.6;
+      if (t.peakKmh == null || kmh > t.peakKmh) t.peakKmh = kmh;
+    }
+  }
+  for (const k of Object.keys(teamTrails)) {
+    const pk = teamTrails[k].peakKmh;
+    if (pk != null) teamTrails[k].peakKmh = Math.round(pk);
+  }
+
   return (
     <EditorClient
       rally={rally}
@@ -177,6 +200,7 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
       liveTeams={liveTeams}
       teamActivity={teamActivity}
       teamSpeeds={teamSpeeds}
+      teamTrails={teamTrails}
       schemaBehind={schemaBehind}
     />
   );
