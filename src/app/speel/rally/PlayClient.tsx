@@ -1183,6 +1183,13 @@ function AssignmentCard({
         <TypeBody type={assignment.type} assignmentId={assignment.id} cfg={cfg} busy={busy} testMode={testMode} send={send} sendForm={sendForm} sendVideo={sendVideo} toast={toast} />
       ) : null}
 
+      {done && assignment.type === "code_breaker" ? (
+        <div className="my-2 flex flex-col items-center">
+          <div className="lock-open text-6xl leading-none">🔓</div>
+          <p className="mt-1 text-sm font-bold text-teal-dark">Klik! Het slot springt open.</p>
+        </div>
+      ) : null}
+
       {feedback ? (
         <div className={feedback.ok ? "feedback-ok mt-2.5" : "feedback-err mt-2.5"}>{feedback.msg}</div>
       ) : null}
