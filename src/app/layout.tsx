@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { APP_VERSION } from "@/lib/version";
 
 export const metadata: Metadata = {
   title: "Polderpuzzel rallye",
@@ -14,6 +15,7 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const commit = (process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_COMMIT_SHA || "").slice(0, 7);
   return (
     <html lang="nl">
       <body className="font-sans">
@@ -23,8 +25,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <span>·</span>
           <span>Next.js + Supabase</span>
           <span>·</span>
-          <span className="rounded-xl bg-coral px-2.5 py-0.5 text-xs text-white">
-            v0.6
+          <span className="rounded-xl bg-coral px-2.5 py-0.5 text-xs text-white" title={commit ? `build ${commit}` : undefined}>
+            v{APP_VERSION}{commit ? ` · ${commit}` : ""}
           </span>
         </footer>
       </body>

@@ -26,30 +26,32 @@ export default async function SpeelPage() {
       </div>
 
       {existing ? (
-        <div className="card p-7 text-center">
-          <div className="text-[44px]">🧭</div>
-          <h1 className="text-[20px] font-bold text-teal-dark">Je speelt al mee</h1>
-          <p className="mb-4 mt-1 text-sm text-polder-grey">
-            Er is een actieve sessie voor team <b className="text-teal-dark">{existing.name}</b>.
+        <div className="card mb-4 p-5 text-center">
+          <h1 className="text-[18px] font-bold text-teal-dark">Je speelt al mee</h1>
+          <p className="mb-3 mt-1 text-sm text-polder-grey">
+            Actieve sessie voor team <b className="text-teal-dark">{existing.name}</b>.
           </p>
           <Link href="/speel/rally" className="btn btn-primary w-full">▶️ Verder spelen</Link>
           <form action={leaveTeam} className="mt-2">
-            <button type="submit" className="btn btn-ghost w-full">Nieuw team / opnieuw beginnen</button>
+            <button type="submit" className="btn btn-ghost w-full">Sessie verlaten</button>
           </form>
         </div>
-      ) : (
-        <div className="card p-7">
-          <div className="text-center text-[44px]">🧭</div>
-          <h1 className="text-center text-[20px] font-bold text-teal-dark">Meedoen aan een rally</h1>
-          <p className="mb-4 mt-1 text-center text-sm text-polder-grey">
-            Eén telefoon per team. Voer je teamcode in en kies een teamnaam — geen account nodig.
-          </p>
-          <JoinForm />
-          <div className="mt-4 rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
-            🧪 Demo-teamcode: <b>RLY-7H2K</b> (de &ldquo;Polderpuzzel rallye&rdquo;).
-          </div>
+      ) : null}
+
+      <div className="card p-7">
+        <div className="text-center text-[44px]">🧭</div>
+        <h1 className="text-center text-[20px] font-bold text-teal-dark">
+          {existing ? "Meedoen aan een andere rally" : "Meedoen aan een rally"}
+        </h1>
+        <p className="mb-4 mt-1 text-center text-sm text-polder-grey">
+          Eén telefoon per team. Voer je teamcode in en kies een teamnaam — geen account nodig.
+          {existing ? " Een nieuwe code brengt je naar die rally." : ""}
+        </p>
+        <JoinForm />
+        <div className="mt-4 rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
+          🧪 Demo-teamcode: <b>RLY-7H2K</b> (de &ldquo;Polderpuzzel rallye&rdquo;).
         </div>
-      )}
+      </div>
     </main>
   );
 }
