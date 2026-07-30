@@ -36,6 +36,7 @@ import {
   startTestPlay,
   togglePublish,
   updateAssignment,
+  updateJoinCode,
   updateLeg,
   updatePoint,
   updateRallySpeedLimit,
@@ -182,7 +183,17 @@ export default function EditorClient({
           onBlur={(e) => e.target.value !== rally.name && run(() => renameRally(rally.id, e.target.value))}
           className="input max-w-[280px] flex-1 text-lg font-bold text-teal-dark"
         />
-        <span className="chip chip-teal">Code {rally.join_code}</span>
+        <label className="flex items-center gap-1 rounded-full bg-teal-light px-3 py-1.5 text-xs font-bold text-teal-dark" title="De teamcode waarmee spelers zich aanmelden. Pas 'm gerust aan.">
+          Teamcode
+          <input
+            defaultValue={rally.join_code}
+            className="w-32 rounded bg-white px-2 py-0.5 text-center font-bold uppercase tracking-wide text-teal-dark"
+            onBlur={(e) => {
+              const v = e.target.value.trim().toUpperCase();
+              if (v && v !== rally.join_code) run(() => updateJoinCode(rally.id, v));
+            }}
+          />
+        </label>
         <div className="flex gap-1.5 rounded-full bg-teal-light p-1">
           <button
             className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "build" ? "bg-teal text-white" : "text-teal-dark"}`}

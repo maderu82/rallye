@@ -75,6 +75,19 @@ export async function renameRally(rallyId: string, name: string) {
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+export async function updateJoinCode(rallyId: string, code: string): Promise<{ error?: string } | void> {
+  const db = await createClient();
+  await requireUser(db);
+  const clean = code.trim().toUpperCase().replace(/\s+/g, "");
+  if (clean.length < 3) return { error: "De teamcode moet minstens 3 tekens zijn." };
+  if (!/^[A-Z0-9-]+$/.test(clean)) return { error: "Alleen letters, cijfers en streepjes zijn toegestaan." };
+  const { error } = await db.from("rallies").update({ join_code: clean }).eq("id", rallyId);
+  if (error) {
+    return { error: /duplicate|unique/i.test(error.message) ? "Deze teamcode is al in gebruik. Kies een andere." : error.message };
+  }
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 export async function togglePublish(rallyId: string, published: boolean) {
   const db = await createClient();
   await requireUser(db);
