@@ -792,6 +792,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   const start = fromPoint?.lat != null && fromPoint?.lng != null ? { lat: fromPoint.lat, lng: fromPoint.lng } : null;
   const end = toPoint?.lat != null && toPoint?.lng != null ? { lat: toPoint.lat, lng: toPoint.lng } : null;
   const [addMode, setAddMode] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [routing, setRouting] = useState(false);
 
   // Steps aligned to the turn points (one per point). The final "arrive" step
@@ -852,6 +853,16 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   const setStep = (i: number, patch: Partial<RoadbookStep>) =>
     run(() => updateLeg(rallyId, leg.id, { turn_steps: steps.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
 
+  const mapToolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <button className={`btn text-sm ${addMode ? "btn-coral" : "btn-ghost"}`} onClick={() => setAddMode((v) => !v)}>
+        {addMode ? "📍 Klikken staat aan — klik op de kaart" : "➕ Punten klikken"}
+      </button>
+      <button className="btn btn-ghost text-sm" onClick={() => void reroute(turnPoints, curPerPoint())}>🛣️ Route bijwerken</button>
+      {routing ? <span className="text-xs text-polder-grey">🛣️ route berekenen…</span> : null}
+    </div>
+  );
+
   return (
     <div className="space-y-2">
       <label className="field-label">{vc.header}</label>
@@ -860,11 +871,8 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <button className={`btn text-sm ${addMode ? "btn-coral" : "btn-ghost"}`} onClick={() => setAddMode((v) => !v)}>
-              {addMode ? "📍 Klikken staat aan — klik op de kaart" : "➕ Afslagpunten klikken"}
-            </button>
-            <button className="btn btn-ghost text-sm" onClick={() => void reroute(turnPoints, curPerPoint())}>🛣️ Route bijwerken</button>
-            {routing ? <span className="text-xs text-polder-grey">🛣️ route berekenen…</span> : null}
+            {mapToolbar}
+            <button className="btn btn-ghost text-sm" onClick={() => setExpanded(true)}>⛶ Groot bewerken</button>
           </div>
           <RoadbookMap
             start={start}
@@ -876,9 +884,32 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
             onAddPoint={addPointAt}
             onMovePoint={movePointAt}
           />
-          <p className="text-xs text-polder-grey">De route loopt <b>langs de wegen</b> (paars); afstanden zijn echte weg-afstanden. Sleep een punt om het te verschuiven. Deze kaart zien alleen jij — spelers krijgen alleen het routeboek.</p>
+          <p className="text-xs text-polder-grey">De route loopt <b>langs de wegen</b> (paars); afstanden zijn echte weg-afstanden. Sleep een punt om het te verschuiven. Tip: <b>⛶ Groot bewerken</b> voor een groter scherm. Deze kaart zien alleen jij — spelers krijgen alleen het routeboek.</p>
         </>
       )}
+
+      {expanded ? (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-paper p-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-sm font-bold text-teal-dark">{vc.header.split(" — ")[0]}</span>
+            <button className="btn btn-primary ml-auto text-sm" onClick={() => setExpanded(false)}>✓ Klaar met bewerken</button>
+          </div>
+          {mapToolbar}
+          <div className="mt-2 min-h-0 flex-1 overflow-hidden rounded-xl">
+            <RoadbookMap
+              start={start}
+              end={end}
+              turnPoints={turnPoints}
+              dirs={mapDirs}
+              route={leg.turn_route}
+              addMode={addMode}
+              onAddPoint={addPointAt}
+              onMovePoint={movePointAt}
+              height={typeof window !== "undefined" ? window.innerHeight - 170 : 520}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {/* One row per map point: distance (auto) + direction/photo + instruction */}
       {turnPoints.length > 0 ? (
