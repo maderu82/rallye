@@ -39,6 +39,7 @@ import {
   updateJoinCode,
   updateLeg,
   updatePoint,
+  updateRallyBranding,
   updateRallySpeedLimit,
 } from "@/lib/designer/actions";
 import { logout } from "@/lib/auth/actions";
@@ -233,6 +234,24 @@ export default function EditorClient({
           }}
         />
         <span>✏️ pas gerust aan — deel deze code (of de QR) met je teams. Publiceer de rally zodat teams kunnen meedoen.</span>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-polder-grey">
+        <span className="font-semibold text-teal-dark">🎨 Branding:</span>
+        <label className="flex items-center gap-1.5">
+          Kleur
+          <input
+            type="color"
+            defaultValue={rally.brand_color ?? "#1D9E75"}
+            className="h-7 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+            onChange={(e) => run(() => updateRallyBranding(rally.id, { brand_color: e.target.value }))}
+          />
+        </label>
+        {rally.brand_color ? (
+          <button className="underline" onClick={() => run(() => updateRallyBranding(rally.id, { brand_color: null }))}>standaardkleur</button>
+        ) : null}
+        <BrandLogo rally={rally} run={run} />
+        <span className="text-polder-grey">— kleur en logo verschijnen in de spelers-app.</span>
       </div>
 
       {pending ? <p className="mb-2 text-xs text-polder-grey">Bezig met opslaan…</p> : null}
@@ -534,6 +553,39 @@ function PointSettings({
         🗑️ Verwijder punt
       </button>
     </div>
+  );
+}
+
+// ── rally logo upload (branding) ─────────────────────────────────────────────
+function BrandLogo({ rally, run }: { rally: Rally; run: (fn: () => Promise<unknown>) => void }) {
+  const [busy, setBusy] = useState(false);
+  async function upload(file: File) {
+    setBusy(true);
+    try {
+      const blob = await downscaleImg(file, 400, 0.9);
+      const prep = await createRoutePhotoUpload(rally.id);
+      if (!prep.ok || !prep.bucket || !prep.path || !prep.token || !prep.publicUrl) return;
+      const supabase = createClient();
+      const { error } = await supabase.storage.from(prep.bucket).uploadToSignedUrl(prep.path, prep.token, blob, { contentType: "image/jpeg" });
+      if (!error) run(() => updateRallyBranding(rally.id, { brand_logo: prep.publicUrl }));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <span className="flex items-center gap-2">
+      {rally.brand_logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={rally.brand_logo} alt="logo" className="h-7 rounded bg-white object-contain px-1" />
+      ) : null}
+      <label className="cursor-pointer underline">
+        {busy ? "uploaden…" : rally.brand_logo ? "logo wijzigen" : "logo uploaden"}
+        <input type="file" accept="image/*" className="hidden" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ""; }} />
+      </label>
+      {rally.brand_logo ? (
+        <button className="underline" onClick={() => run(() => updateRallyBranding(rally.id, { brand_logo: null }))}>verwijderen</button>
+      ) : null}
+    </span>
   );
 }
 

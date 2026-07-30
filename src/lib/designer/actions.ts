@@ -88,6 +88,17 @@ export async function updateJoinCode(rallyId: string, code: string): Promise<{ e
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+export async function updateRallyBranding(
+  rallyId: string,
+  fields: { brand_color?: string | null; brand_logo?: string | null },
+): Promise<{ error?: string } | void> {
+  const db = await createClient();
+  await requireUser(db);
+  const { error } = await db.from("rallies").update(fields).eq("id", rallyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 export async function togglePublish(rallyId: string, published: boolean) {
   const db = await createClient();
   await requireUser(db);

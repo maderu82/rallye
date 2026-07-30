@@ -233,10 +233,17 @@ export default function PlayClient({
           </form>
         </div>
       ) : null}
-      <header className="sticky top-0 z-30 flex items-center gap-2.5 bg-teal px-4 py-3 text-white shadow-soft">
+      <header
+        className="sticky top-0 z-30 flex items-center gap-2.5 bg-teal px-4 py-3 text-white shadow-soft"
+        style={state.rally.brand_color ? { background: state.rally.brand_color } : undefined}
+      >
         <a href="/" className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/20 text-base" title="Startscherm">
           ⌂
         </a>
+        {state.rally.brand_logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={state.rally.brand_logo} alt="" className="h-8 max-w-[96px] rounded bg-white/90 object-contain px-1" />
+        ) : null}
         <div className="flex-1 truncate text-[15px] font-bold">{title}</div>
         <button
           onClick={() => setLbOpen(true)}

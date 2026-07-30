@@ -9,6 +9,8 @@ export interface Rally {
   join_code: string;
   published: boolean;
   speed_limit: number | null; // rally-wide default speed warning threshold (km/h)
+  brand_color: string | null; // accent color (hex) for the player app
+  brand_logo: string | null; // logo URL shown in the player header
   created_at: string;
   updated_at: string;
 }

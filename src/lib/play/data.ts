@@ -18,7 +18,7 @@ import type {
 
 export interface PlayState {
   team: Team;
-  rally: { id: string; name: string; join_code: string };
+  rally: { id: string; name: string; join_code: string; brand_color: string | null; brand_logo: string | null };
   points: Point[];
   legs: Leg[];
   assignments: PublicAssignment[];
@@ -45,7 +45,7 @@ export async function getPlayState(token: string): Promise<PlayState | null> {
 
   const [{ data: rally }, { data: points }, { data: legs }, { data: assignments }, { data: events }, { data: badges }] =
     await Promise.all([
-      db.from("rallies").select("id,name,join_code").eq("id", team.rally_id).single(),
+      db.from("rallies").select("id,name,join_code,brand_color,brand_logo").eq("id", team.rally_id).single(),
       db.from("points").select("*").eq("rally_id", team.rally_id).order("position"),
       db.from("legs").select("*").eq("rally_id", team.rally_id).order("position"),
       db.from("assignments").select("*").eq("rally_id", team.rally_id),
