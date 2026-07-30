@@ -580,10 +580,10 @@ function GameMasterInput({
     <div className="space-y-2">
       <p className="rounded-soft bg-teal-light p-2 text-[13px] text-teal-dark">🧑‍⚖️ Geef het toestel aan de spelleider — die vult de code en de punten in.</p>
       <label className="field-label">Spelleiderscode</label>
-      <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="code van de spelleider" autoCapitalize="characters" />
+      <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="code van de spelleider" autoCapitalize="characters" autoCorrect="off" autoComplete="off" spellCheck={false} />
       <label className="field-label">Punten{max ? ` (0–${max})` : ""}</label>
       <input type="number" min={0} max={max || undefined} className="input" value={pts} onChange={(e) => setPts(Number(e.target.value))} />
-      <button className="btn btn-purple w-full" disabled={busy || !code.trim()} onClick={() => send({ code: code.trim(), points: pts })}>
+      <button className="btn btn-purple w-full" disabled={busy} onClick={() => send({ code: code.trim(), points: pts })}>
         {busy ? "Bezig…" : "Punten toekennen"}
       </button>
     </div>
@@ -1367,6 +1367,10 @@ function TypeBody({
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="code"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
           />
           <button className="btn btn-purple w-full" disabled={busy} onClick={() => send({ code: text })}>
             Ontgrendel het slot

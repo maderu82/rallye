@@ -31,6 +31,14 @@ function normalize(s: unknown): string {
     .replace(/\s+/g, " ");
 }
 
+// For codes/locks: ignore case and all spaces/hyphens, so "BRUG-2024",
+// "brug 2024" and "1 8 9 4" match what the organizer stored.
+function normalizeCode(s: unknown): string {
+  // Ignore case + anything that isn't a letter or digit (spaces, hyphens,
+  // punctuation), so a stray space/dot never blocks an otherwise-correct code.
+  return String(s ?? "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
 export function grade(
   a: Pick<Assignment, "type" | "points" | "public_config" | "solution">,
   submission: Record<string, unknown>,
@@ -70,7 +78,7 @@ export function grade(
     }
 
     case "code_breaker": {
-      const ok = normalize(submission.code) === normalize(sol.code);
+      const ok = normalizeCode(submission.code) === normalizeCode(sol.code);
       return ok
         ? { complete: true, delta: a.points, ok, feedback: "✅ Klik! Het slot springt open.", kind: "assignment" }
         : wrong("❌ Het slot blijft dicht. Probeer een andere code.");
@@ -176,10 +184,13 @@ export function grade(
     case "game_master": {
       // A game master enters a secret code + the points earned. The code gates
       // scoring so teams can't award themselves points.
-      const code = normalize(sol.code);
-      const given = normalize(submission.code);
+      const code = normalizeCode(sol.code);
+      const given = normalizeCode(submission.code);
       if (!code) {
         return { complete: false, delta: 0, ok: false, feedback: "⚠️ Er is nog geen spelleiderscode ingesteld.", kind: "assignment" };
+      }
+      if (!given) {
+        return { complete: false, delta: 0, ok: false, feedback: "⚠️ Vul eerst de spelleiderscode in.", kind: "assignment" };
       }
       if (given !== code) {
         return { complete: false, delta: 0, ok: false, feedback: "❌ Onjuiste spelleiderscode.", kind: "assignment" };
