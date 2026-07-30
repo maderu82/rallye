@@ -111,6 +111,18 @@ export default function RallyMap({
     }
   }, [addMode]);
 
+  // pan/zoom to the selected point (e.g. picked from the list in the editor)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selectedId) return;
+    const p = points.find((x) => x.id === selectedId);
+    if (p && p.lat != null && p.lng != null) {
+      map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), 15), { duration: 0.6 });
+    }
+    // only react to selection changes, not every points refresh
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
   // redraw markers / route / teams when data changes
   useEffect(() => {
     const map = mapRef.current;
