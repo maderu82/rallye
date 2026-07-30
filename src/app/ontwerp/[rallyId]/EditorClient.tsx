@@ -183,17 +183,7 @@ export default function EditorClient({
           onBlur={(e) => e.target.value !== rally.name && run(() => renameRally(rally.id, e.target.value))}
           className="input max-w-[280px] flex-1 text-lg font-bold text-teal-dark"
         />
-        <label className="flex items-center gap-1 rounded-full bg-teal-light px-3 py-1.5 text-xs font-bold text-teal-dark" title="De teamcode waarmee spelers zich aanmelden. Pas 'm gerust aan.">
-          Teamcode
-          <input
-            defaultValue={rally.join_code}
-            className="w-32 rounded bg-white px-2 py-0.5 text-center font-bold uppercase tracking-wide text-teal-dark"
-            onBlur={(e) => {
-              const v = e.target.value.trim().toUpperCase();
-              if (v && v !== rally.join_code) run(() => updateJoinCode(rally.id, v));
-            }}
-          />
-        </label>
+        <span className="chip chip-teal">Code {rally.join_code}</span>
         <div className="flex gap-1.5 rounded-full bg-teal-light p-1">
           <button
             className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "build" ? "bg-teal text-white" : "text-teal-dark"}`}
@@ -228,9 +218,19 @@ export default function EditorClient({
         </form>
       </div>
 
-      <p className="mb-3 text-xs text-polder-grey">
-        Deel de teamcode <b className="text-teal-dark">{rally.join_code}</b> met je teams (of laat ze de QR scannen). Publiceer de rally zodat teams kunnen meedoen.
-      </p>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-polder-grey">
+        <span>Teamcode voor spelers:</span>
+        <input
+          defaultValue={rally.join_code}
+          aria-label="Teamcode bewerken"
+          className="w-40 rounded-soft border-2 border-teal bg-white px-2 py-1 text-center text-sm font-bold uppercase tracking-wide text-teal-dark"
+          onBlur={(e) => {
+            const v = e.target.value.trim().toUpperCase();
+            if (v && v !== rally.join_code) run(() => updateJoinCode(rally.id, v));
+          }}
+        />
+        <span>✏️ pas gerust aan — deel deze code (of de QR) met je teams. Publiceer de rally zodat teams kunnen meedoen.</span>
+      </div>
 
       {pending ? <p className="mb-2 text-xs text-polder-grey">Bezig met opslaan…</p> : null}
 
