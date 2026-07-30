@@ -597,7 +597,7 @@ function SequentialNav({
   const noun = isPhoto ? "foto" : "aanwijzing";
   const steps = leg.turn_steps ?? [];
   const pts = leg.turn_points ?? [];
-  const radius = leg.photo_radius != null && leg.photo_radius > 0 ? leg.photo_radius : PHOTO_GEOFENCE_M;
+  const legRadius = leg.photo_radius != null && leg.photo_radius > 0 ? leg.photo_radius : PHOTO_GEOFENCE_M;
   const cost = leg.photo_buy_cost != null && leg.photo_buy_cost > 0 ? leg.photo_buy_cost : NEXT_STEP_COST;
   const [idx, setIdx] = useState(0);
   const [checking, setChecking] = useState(false);
@@ -629,6 +629,7 @@ function SequentialNav({
 
   const cur = steps[idx];
   const loc = pts[idx];
+  const radius = cur.radius != null && cur.radius > 0 ? cur.radius : legRadius;
 
   function confirmHere() {
     if (testMode) {

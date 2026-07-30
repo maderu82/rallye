@@ -567,20 +567,20 @@ function LegSettings({
 
       {leg.nav_mode === "photo_nav" ? <RoadbookEditor variant="photo_nav" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
-      {leg.nav_mode === "photo_nav" ? (
+      {leg.nav_mode === "photo_nav" || leg.nav_mode === "cryptic" ? (
         <div className="grid grid-cols-2 gap-2 rounded-soft bg-paper p-3">
           <div>
-            <label className="field-label">Aankomststraal (m)</label>
+            <label className="field-label">Standaard aankomststraal (m)</label>
             <input
               type="number"
-              min={10}
+              min={5}
               defaultValue={leg.photo_radius ?? 100}
               className="input"
               onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { photo_radius: v === "" ? null : Number(v) })); }}
             />
           </div>
           <div>
-            <label className="field-label">Afkoopprijs volgende foto (ptn)</label>
+            <label className="field-label">Afkoopprijs volgende punt (ptn)</label>
             <input
               type="number"
               min={0}
@@ -589,7 +589,7 @@ function LegSettings({
               onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { photo_buy_cost: v === "" ? null : Number(v) })); }}
             />
           </div>
-          <p className="col-span-2 text-xs text-polder-grey">Spelers moeten binnen deze straal van een foto staan om door te gaan; of ze kopen de volgende foto af voor dit aantal punten (alleen als ze genoeg hebben).</p>
+          <p className="col-span-2 text-xs text-polder-grey">Standaardstraal voor alle punten van dit traject (per punt te overschrijven). Spelers moeten binnen die straal staan om door te gaan; of ze kopen het volgende punt af voor dit aantal punten (alleen als ze genoeg hebben).</p>
         </div>
       ) : null}
 
@@ -661,34 +661,35 @@ const RB_CONFIG: Record<RbVariant, {
   arrowPrimary: boolean;
   showPhoto: boolean;
   showDist: boolean;
+  showRadius: boolean;
   notePlaceholder: string;
   empty: string;
 }> = {
   turn: {
     header: "Roadbook — klik de afslagpunten op de kaart, kies per punt de richting",
     listLabel: "Aanwijzingen (in volgorde)",
-    showArrow: true, arrowPrimary: true, showPhoto: false, showDist: true,
+    showArrow: true, arrowPrimary: true, showPhoto: false, showDist: true, showRadius: false,
     notePlaceholder: "toelichting (bijv. 'bij de kerk')",
     empty: "Nog geen afslagpunten. Zet ze op de kaart — voor elk punt kies je daarna de richting.",
   },
   routebook: {
     header: "Routeboek — klik de punten op de kaart, schrijf per punt de aanwijzing",
     listLabel: "Aanwijzingen (straatnamen / herkenningspunten)",
-    showArrow: true, arrowPrimary: false, showPhoto: false, showDist: true,
+    showArrow: true, arrowPrimary: false, showPhoto: false, showDist: true, showRadius: false,
     notePlaceholder: "aanwijzing, bijv. 'Ga linksaf de Kerkstraat in, volg tot de brug'",
     empty: "Nog geen punten. Zet ze op de kaart langs de route — voor elk punt schrijf je daarna de aanwijzing.",
   },
   cryptic: {
     header: "Cryptische route — klik de punten op de kaart, schrijf per punt een raadsel",
     listLabel: "Cryptische aanwijzingen (spelers zien géén pijl of afstand)",
-    showArrow: false, arrowPrimary: false, showPhoto: false, showDist: true,
+    showArrow: false, arrowPrimary: false, showPhoto: false, showDist: true, showRadius: true,
     notePlaceholder: "cryptisch, bijv. 'bij het huis met de rode luiken rechtsaf, voorbij de derde brug'",
     empty: "Nog geen punten. Zet ze op de kaart — voor elk punt schrijf je een cryptische aanwijzing.",
   },
   photo_nav: {
     header: "Foto-navigatie — klik de punten op de kaart, upload per punt een foto",
     listLabel: "Foto-aanwijzingen (spelers herkennen de plek en bepalen zelf de richting)",
-    showArrow: false, arrowPrimary: false, showPhoto: true, showDist: true,
+    showArrow: false, arrowPrimary: false, showPhoto: true, showDist: true, showRadius: true,
     notePlaceholder: "optionele hint bij de foto",
     empty: "Nog geen punten. Zet ze op de kaart — voor elk punt upload je een foto van het kruispunt.",
   },
@@ -872,12 +873,26 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                 : null;
             return (
               <div key={i} className={`rounded-soft border-2 p-2 ${warn ? "border-[#D85A30] bg-coral-light" : "border-polder-line"}`}>
-                <div className="mb-1.5 flex items-center gap-2">
+                <div className="mb-1.5 flex flex-wrap items-center gap-2">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-bold text-white">{i + 1}</span>
                   {vc.showDist ? (
                     <span className="text-xs font-semibold text-polder-grey">
                       na {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`}:
                     </span>
+                  ) : null}
+                  {vc.showRadius ? (
+                    <label className="flex items-center gap-1 text-[11px] text-polder-grey" title="Hoe dicht moet de speler bij dit punt staan? Leeg = standaard van dit traject.">
+                      📍
+                      <input
+                        type="number"
+                        min={5}
+                        defaultValue={s?.radius ?? ""}
+                        placeholder={String(leg.photo_radius ?? 100)}
+                        className="input w-16 px-1.5 py-0.5 text-center text-xs"
+                        onBlur={(e) => { const v = e.target.value.trim(); setStep(i, { radius: v === "" ? undefined : Number(v) }); }}
+                      />
+                      m
+                    </label>
                   ) : null}
                   <button className="btn btn-danger ml-auto px-2 py-1 text-xs" onClick={() => deletePointAt(i)}>✕ punt</button>
                 </div>
