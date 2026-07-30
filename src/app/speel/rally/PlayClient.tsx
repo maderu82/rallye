@@ -346,7 +346,7 @@ function WaypointView(props: {
         />
       ) : null}
 
-      {point.note && (unlocked || !hideDest) ? (
+      {point.note && (unlocked || !gated) ? (
         <div className="mb-3.5 rounded-card bg-teal-light p-3 text-sm text-teal-dark">
           📍 <b>{point.name}</b> — {point.note}
         </div>
@@ -356,28 +356,28 @@ function WaypointView(props: {
         <GpsUnlock
           point={point}
           testMode={testMode}
-          hideDistance={hideDest}
+          // hide the countdown for puzzle modes (spoils it) and for compass
+          // (the compass already shows the distance) — the manual button stays.
+          hideDistance={hideDest || leg?.nav_mode === "compass"}
           onUnlock={() => setUnlocked(true)}
           toast={toast}
         />
       ) : null}
 
-      {assignment && !unlocked && gated && hideDest ? (
-        // Puzzle navigation: don't even preview the task — it can reveal the spot.
+      {assignment && !unlocked && gated ? (
+        // Locked: never preview the task — it can reveal the destination.
         <div className="card border-l-4 border-polder-line text-center text-sm text-polder-grey">
           🔒 De opdracht verschijnt zodra je op de bestemming bent.
         </div>
       ) : assignment ? (
-        <div className={unlocked || !gated ? "" : "pointer-events-none opacity-50 grayscale"}>
-          <AssignmentCard
-            assignment={assignment}
-            done={done}
-            testMode={testMode}
-            onScored={onScored}
-            toast={toast}
-            onComplete={() => onComplete(assignment.id)}
-          />
-        </div>
+        <AssignmentCard
+          assignment={assignment}
+          done={done}
+          testMode={testMode}
+          onScored={onScored}
+          toast={toast}
+          onComplete={() => onComplete(assignment.id)}
+        />
       ) : (
         <div className="card border-l-4 border-teal">
           <p className="text-sm text-polder-grey">Dit is een navigatiepunt — er is hier geen opdracht. Ga door naar het volgende punt.</p>
@@ -905,6 +905,7 @@ function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
 function GpsUnlock({ point, testMode, hideDistance, onUnlock, toast }: { point: Point; testMode: boolean; hideDistance: boolean; onUnlock: () => void; toast: (m: string) => void }) {
   const [dist, setDist] = useState<number | null>(null);
   const [err, setErr] = useState(false);
+  const [checking, setChecking] = useState(false);
   const radius = point.unlock_radius || 50;
 
   useEffect(() => {
@@ -937,36 +938,63 @@ function GpsUnlock({ point, testMode, hideDistance, onUnlock, toast }: { point: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Manual "we think we're here" check: verify the current position on demand.
+  function checkHere() {
+    if (testMode) {
+      onUnlock();
+      return;
+    }
+    if (point.lat == null || point.lng == null) {
+      onUnlock();
+      return;
+    }
+    if (!("geolocation" in navigator)) {
+      toast("📡 Geen gps beschikbaar op dit toestel.");
+      return;
+    }
+    setChecking(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setChecking(false);
+        const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { lat: point.lat as number, lng: point.lng as number });
+        setDist(Math.round(d));
+        if (d <= Math.max(radius, pos.coords.accuracy || 0)) {
+          toast("📍 Op de plek — de vraag is ontgrendeld!");
+          onUnlock();
+        } else {
+          toast("🔍 Nog niet op de juiste plek — volg de navigatie verder.");
+        }
+      },
+      () => {
+        setChecking(false);
+        toast("📡 Geen gps-fix — zet locatie aan en probeer opnieuw.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 },
+    );
+  }
+
   return (
     <div className="mb-3">
       <div className="mb-2.5 flex items-center gap-2 rounded-soft bg-coral-light p-2.5 text-[13px] font-bold text-coral">
-        🔒 Opdracht vergrendeld — de opdracht opent automatisch zodra je aankomt.
+        🔒 Opdracht vergrendeld — hij opent zodra je op de bestemming bent.
       </div>
-      {hideDistance ? (
-        <div className="rounded-soft bg-teal-light p-3 text-center">
-          <div className="text-2xl">🧭📖</div>
-          <p className="text-[13px] text-polder-grey">
-            {err
-              ? "📡 Geen gps. Zet locatie aan (of gebruik testmodus)."
-              : dist != null
-              ? "Volg het roadbook — de opdracht opent zodra je op de bestemming bent."
-              : "📡 Locatie bepalen…"}
-          </p>
-        </div>
-      ) : dist != null ? (
-        <div className="rounded-soft bg-teal-light p-3 text-center">
+      {!hideDistance && dist != null ? (
+        <div className="mb-2 rounded-soft bg-teal-light p-3 text-center">
           <div className="text-3xl font-bold text-teal-dark">
             {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`}
           </div>
-          <p className="text-[13px] text-polder-grey">tot het volgende punt — blijf navigeren 🧭</p>
+          <p className="text-[13px] text-polder-grey">tot het punt — blijf navigeren 🧭</p>
         </div>
-      ) : err ? (
-        <p className="text-center text-[13px] text-polder-grey">📡 Geen gps. Zet locatie aan (of gebruik testmodus).</p>
       ) : (
-        <p className="text-center text-[13px] text-polder-grey">📡 Locatie bepalen…</p>
+        <p className="mb-2 text-center text-[13px] text-polder-grey">
+          {err ? "📡 Geen gps. Zet locatie aan (of gebruik testmodus)." : "Volg de navigatie — tik op de knop als je denkt dat je er bent."}
+        </p>
       )}
+      <button className="btn-demo w-full" disabled={checking} onClick={checkHere}>
+        {checking ? "📡 Locatie controleren…" : "📍 We zijn er! — controleer locatie"}
+      </button>
       {testMode ? (
-        <button className="btn-demo mt-2" onClick={onUnlock}>
+        <button className="btn btn-ghost mt-2 w-full text-sm" onClick={onUnlock}>
           🧪 Test: locatie bereikt
         </button>
       ) : null}
