@@ -786,6 +786,7 @@ function LiveCompass({ target }: { target: Point }) {
   }, []);
 
   function attachOrientation() {
+    offRef.current?.(); // avoid duplicate listeners on re-activate
     const handler = (e: Event) => {
       const oe = e as OrientationEvent;
       let h: number | null = null;
@@ -831,9 +832,15 @@ function LiveCompass({ target }: { target: Point }) {
   async function enableCompass() {
     const DOE = window.DeviceOrientationEvent as unknown as DOEWithPerm;
     try {
-      const res = await DOE.requestPermission?.();
-      if (res === "granted") {
-        setNeedPerm(false);
+      if (typeof DOE?.requestPermission === "function") {
+        // iOS: needs an explicit permission grant from this tap.
+        const res = await DOE.requestPermission();
+        if (res === "granted") {
+          setNeedPerm(false);
+          attachOrientation();
+        }
+      } else {
+        // Android / others: no permission needed — (re)attach the listeners.
         attachOrientation();
       }
     } catch {
@@ -847,45 +854,55 @@ function LiveCompass({ target }: { target: Point }) {
   const distance =
     pos && hasTarget ? Math.round(haversine(pos, { lat: target.lat!, lng: target.lng! })) : null;
 
-  // Just a single arrow: when we know the phone heading, rotate it relative to
-  // that so the player turns until the arrow points up; otherwise point at the
-  // absolute bearing. No compass ring / degrees — that confused players.
-  const arrowRot = bearing != null ? (heading != null ? (bearing - heading + 360) % 360 : bearing) : 0;
-  const pointingUp = heading != null && bearing != null && Math.abs(((arrowRot + 180) % 360) - 180) < 12;
+  // Arrow points to the target RELATIVE to the phone heading (turn until it
+  // points up). Only shown when we actually have a heading — otherwise the
+  // direction would be meaningless/misleading, so we prompt to calibrate.
+  const hasHeading = heading != null && bearing != null;
+  const arrowRot = hasHeading ? (bearing! - heading! + 360) % 360 : 0;
+  const pointingUp = hasHeading && Math.abs(((arrowRot + 180) % 360) - 180) < 12;
 
   return (
     <div className="flex flex-col items-center py-1.5">
-      <div className={`flex h-40 w-40 items-center justify-center rounded-full ${pointingUp ? "bg-teal-light" : "bg-paper"}`}>
-        <svg
-          viewBox="0 0 100 100"
-          className="h-28 w-28"
-          style={{ transform: `rotate(${arrowRot}deg)`, transition: "transform .15s ease" }}
-        >
-          <path d="M50 6 L74 62 L50 50 L26 62 Z" fill={pointingUp ? "#1D9E75" : "#D85A30"} />
-        </svg>
-      </div>
+      {hasHeading ? (
+        <div className={`flex h-40 w-40 items-center justify-center rounded-full ${pointingUp ? "bg-teal-light" : "bg-paper"}`}>
+          <svg
+            viewBox="0 0 100 100"
+            className="h-28 w-28"
+            style={{ transform: `rotate(${arrowRot}deg)`, transition: "transform .15s ease" }}
+          >
+            <path d="M50 6 L74 62 L50 50 L26 62 Z" fill={pointingUp ? "#1D9E75" : "#D85A30"} />
+          </svg>
+        </div>
+      ) : (
+        <div className="flex h-40 w-40 flex-col items-center justify-center rounded-full bg-paper text-center">
+          <div className="text-5xl">🧭</div>
+          <p className="mt-1 px-4 text-[11px] font-semibold text-polder-grey">Kompas nog niet actief</p>
+        </div>
+      )}
+
       <div className="mt-3 text-center">
         <b className="block text-[26px] text-coral">
           {distance != null ? (distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`) : "—"}
         </b>
         <span className="text-sm text-polder-grey">tot het punt</span>
       </div>
-      {needPerm ? (
-        <button className="btn btn-ghost mt-2 text-sm" onClick={enableCompass}>
-          🧭 Richtingspijl activeren
-        </button>
-      ) : (
+
+      {hasHeading ? (
         <p className="mt-2 text-center text-xs text-polder-grey">
-          {err
-            ? "Zet gps aan om de richting en afstand te zien."
-            : heading != null
-              ? pointingUp
-                ? "Goed zo — loop rechtdoor deze kant op! 🚶"
-                : "Draai tot de pijl recht omhoog wijst en loop die kant op."
-              : pos
-                ? "De pijl wijst de richting naar het punt 📍"
-                : "📡 Locatie bepalen…"}
+          {pointingUp ? "Goed zo — loop rechtdoor deze kant op! 🚶" : "Draai tot de pijl recht omhoog wijst en loop die kant op."}
+          <button onClick={enableCompass} className="ml-1 underline">opnieuw ijken</button>
         </p>
+      ) : (
+        <>
+          <button className="btn btn-primary mt-2 w-full" onClick={enableCompass}>
+            🧭 Kompas activeren / ijken
+          </button>
+          <p className="mt-1 text-center text-[11px] text-polder-grey">
+            {err
+              ? "Zet ook gps/locatie aan voor de afstand."
+              : "Sta bewegingstoegang toe en beweeg je telefoon een paar keer in een liggende 8-vorm om het kompas te ijken."}
+          </p>
+        </>
       )}
     </div>
   );
