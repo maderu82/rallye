@@ -23,6 +23,136 @@ function readableInk(hex: string): string {
 // Max length for a video-opdracht: keeps uploads small (fits a default bucket).
 const MAX_VIDEO_SEC = 10;
 
+// ── arrival sound + haptics ──────────────────────────────────────────────────
+let audioCtx: AudioContext | null = null;
+function ensureAudio(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    return audioCtx;
+  } catch {
+    return null;
+  }
+}
+function tone(ctx: AudioContext, freq: number, at: number, dur: number) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(0.2, at + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(at);
+  osc.stop(at + dur + 0.03);
+}
+// "assignment" = reached a rally point (ding-dong); "waypoint" = intermediate.
+function arrivalFeedback(kind: "assignment" | "waypoint") {
+  const ctx = ensureAudio();
+  if (ctx) {
+    const t = ctx.currentTime;
+    if (kind === "assignment") {
+      tone(ctx, 880, t, 0.16);
+      tone(ctx, 1245, t + 0.18, 0.3);
+    } else {
+      tone(ctx, 740, t, 0.14);
+    }
+  }
+  try {
+    navigator.vibrate?.(kind === "assignment" ? [140, 70, 140] : 90);
+  } catch {
+    /* not supported */
+  }
+}
+
+// ── tulip / bolletje-pijltje glyph: schematic of the turn at a junction ───────
+const TULIP_ANGLE: Record<string, number> = {
+  straight: 0, slight_left: -35, slight_right: 35, left: -90, right: 90,
+  sharp_left: -135, sharp_right: 135, uturn: 165,
+};
+function TulipGlyph({ dir, size = 52 }: { dir: string; size?: number }) {
+  const purple = "#534AB7", ball = "#D85A30";
+  if (dir === "roundabout") {
+    return (
+      <svg viewBox="0 0 60 60" width={size} height={size} aria-hidden>
+        <line x1="30" y1="58" x2="30" y2="42" stroke={purple} strokeWidth="3.5" strokeLinecap="round" />
+        <circle cx="30" cy="27" r="12" fill="none" stroke={purple} strokeWidth="3.5" />
+        <path d="M42 22 l6 -3 l-2 7 z" fill={purple} />
+        <circle cx="30" cy="42" r="5" fill={ball} />
+      </svg>
+    );
+  }
+  if (dir === "arrive") {
+    return (
+      <svg viewBox="0 0 60 60" width={size} height={size} aria-hidden>
+        <line x1="30" y1="58" x2="30" y2="28" stroke={purple} strokeWidth="3.5" strokeLinecap="round" />
+        <circle cx="30" cy="21" r="10" fill="#1D9E75" />
+        <path d="M25 21 h10 M30 16 v10" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  const a = ((TULIP_ANGLE[dir] ?? 0) * Math.PI) / 180;
+  const cx = 30, cy = 33, len = 22;
+  const ex = cx + len * Math.sin(a), ey = cy - len * Math.cos(a);
+  const wing = 8;
+  const w1 = a + Math.PI - 0.45, w2 = a + Math.PI + 0.45;
+  const p1x = ex + wing * Math.sin(w1), p1y = ey - wing * Math.cos(w1);
+  const p2x = ex + wing * Math.sin(w2), p2y = ey - wing * Math.cos(w2);
+  return (
+    <svg viewBox="0 0 60 60" width={size} height={size} aria-hidden>
+      {/* incoming road: you arrive from the bottom */}
+      <line x1="30" y1="58" x2={cx} y2={cy} stroke={purple} strokeWidth="3.5" strokeLinecap="round" />
+      {/* outgoing road */}
+      <line x1={cx} y1={cy} x2={ex} y2={ey} stroke={purple} strokeWidth="3.5" strokeLinecap="round" />
+      <polyline points={`${p1x},${p1y} ${ex},${ey} ${p2x},${p2y}`} fill="none" stroke={purple} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+      {/* the ball = your position */}
+      <circle cx={cx} cy={cy} r="5" fill={ball} />
+    </svg>
+  );
+}
+
+// One-time intro so players learn to recognise the arrival signals.
+function SoundIntro() {
+  const [hidden, setHidden] = useState(true);
+  useEffect(() => {
+    try {
+      setHidden(localStorage.getItem("soundintro") === "1");
+    } catch {
+      setHidden(false);
+    }
+  }, []);
+  if (hidden) return null;
+  const dismiss = () => {
+    try {
+      localStorage.setItem("soundintro", "1");
+    } catch {}
+    setHidden(true);
+  };
+  return (
+    <div className="mx-4 mt-3 rounded-card bg-white p-3 shadow-soft">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">🔔</span>
+        <b className="flex-1 text-sm text-teal-dark">Geluiden — luister ze even</b>
+        <button className="text-xs text-polder-grey underline" onClick={dismiss}>begrepen</button>
+      </div>
+      <p className="mt-1 text-[12px] text-polder-grey">Onderweg krijg je geluid + trilling zodra je een punt bereikt. Zet je telefoongeluid aan.</p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button className="btn btn-ghost py-2 text-xs leading-tight" onClick={() => arrivalFeedback("waypoint")}>
+          🔉 Tussenpunt<br />
+          <span className="text-[10px] text-polder-grey">kort piepje</span>
+        </button>
+        <button className="btn btn-ghost py-2 text-xs leading-tight" onClick={() => arrivalFeedback("assignment")}>
+          🔔 Opdrachtpunt<br />
+          <span className="text-[10px] text-polder-grey">ding-dong</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Read a video file's duration (seconds) from its metadata; 0 if unreadable.
 function videoDuration(file: File): Promise<number> {
   return new Promise((resolve) => {
@@ -289,6 +419,8 @@ export default function PlayClient({
           <span>{score}</span> ptn
         </div>
       </header>
+
+      <SoundIntro />
 
       <div className="flex-1 p-4 pb-24">
         {geoDenied ? (
@@ -561,7 +693,7 @@ function LegNav({
               const d = ROADBOOK_BY_ID[s.dir] ?? ROADBOOK_BY_ID.straight;
               return (
                 <div key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-center gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5 ${checked.has(i) ? "opacity-60" : ""}`}>
-                  <span className="text-3xl leading-none">{d.icon}</span>
+                  <span className="shrink-0 rounded-soft bg-paper p-0.5"><TulipGlyph dir={s.dir} /></span>
                   <div className="flex-1">
                     <div className={`font-bold text-teal-dark ${checked.has(i) ? "line-through" : ""}`}>
                       {s.dist ? `Na ${s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)} km` : `${s.dist} m`}: ` : ""}{d.label}
@@ -690,7 +822,9 @@ function SequentialNav({
   const radius = cur.radius != null && cur.radius > 0 ? cur.radius : legRadius;
 
   function confirmHere() {
+    ensureAudio(); // unlock audio on this tap (iOS)
     if (testMode) {
+      arrivalFeedback("waypoint");
       toast(`🧪 Test: volgende ${noun} vrijgegeven.`);
       save(idx + 1);
       return;
@@ -711,6 +845,7 @@ function SequentialNav({
         const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { lat: loc.lat as number, lng: loc.lng as number });
         // allow for gps inaccuracy but never reveal the distance to the player
         if (d <= Math.max(radius, pos.coords.accuracy || 0)) {
+          arrivalFeedback("waypoint");
           toast(`📍 Goed gevonden — volgende ${noun}!`);
           save(idx + 1);
         } else {
@@ -1083,6 +1218,7 @@ function GpsUnlock({ point, testMode, hideDistance, onUnlock, toast }: { point: 
         // allow for gps inaccuracy so it reliably triggers on arrival
         if (d <= Math.max(radius, (pos.coords.accuracy || 0) * 0.6)) {
           navigator.geolocation.clearWatch(id);
+          arrivalFeedback("assignment");
           toast("📍 Locatie bereikt — opdracht ontgrendeld!");
           onUnlock();
         }
@@ -1096,7 +1232,9 @@ function GpsUnlock({ point, testMode, hideDistance, onUnlock, toast }: { point: 
 
   // Manual "we think we're here" check: verify the current position on demand.
   function checkHere() {
+    ensureAudio(); // this tap unlocks audio playback (needed on iOS)
     if (testMode) {
+      arrivalFeedback("assignment");
       onUnlock();
       return;
     }
@@ -1115,6 +1253,7 @@ function GpsUnlock({ point, testMode, hideDistance, onUnlock, toast }: { point: 
         const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { lat: point.lat as number, lng: point.lng as number });
         setDist(Math.round(d));
         if (d <= Math.max(radius, pos.coords.accuracy || 0)) {
+          arrivalFeedback("assignment");
           toast("📍 Op de plek — de vraag is ontgrendeld!");
           onUnlock();
         } else {
