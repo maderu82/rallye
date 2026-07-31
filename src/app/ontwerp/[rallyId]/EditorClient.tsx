@@ -1036,7 +1036,12 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
 }
 
 // ── live view (teams volgen) ─────────────────────────────────────────────────
-const TEAM_COLORS = ["#534AB7", "#D85A30", "#0E7490", "#7A5D00"];
+// 12 visually distinct colors so up to ~12 teams each get their own.
+const TEAM_COLORS = [
+  "#534AB7", "#D85A30", "#0E7490", "#7A5D00",
+  "#1D9E75", "#C2255C", "#2B6CB0", "#B7791F",
+  "#6B46C1", "#2F855A", "#B83280", "#0B7285",
+];
 
 function LiveView({
   rallyId,
@@ -1093,12 +1098,12 @@ function LiveView({
               // prefer the team's real reported GPS; fall back to a progress estimate
               const real = t.last_lat != null && t.last_lng != null ? ([t.last_lat, t.last_lng] as [number, number]) : null;
               const pos = real ?? geoPos(points, Math.min(1, t.current_index / maxIndex));
-              return pos ? { id: t.id, name: t.name, lat: pos[0], lng: pos[1], color: TEAM_COLORS[i % 4] } : null;
+              return pos ? { id: t.id, name: t.name, lat: pos[0], lng: pos[1], color: TEAM_COLORS[i % TEAM_COLORS.length] } : null;
             })
             .filter((x): x is MapTeam => x !== null)}
           trails={teams
             // when a team is opened, show only their trail (isolate the route)
-            .map((t, i) => ({ id: t.id, color: TEAM_COLORS[i % 4], path: trails[t.id]?.path ?? [] }))
+            .map((t, i) => ({ id: t.id, color: TEAM_COLORS[i % TEAM_COLORS.length], path: trails[t.id]?.path ?? [] }))
             .filter((tr) => tr.path.length >= 2 && (!openTeam || tr.id === openTeam))
             .map(({ color, path }) => ({ color, path }))}
         />
@@ -1157,7 +1162,7 @@ function LiveView({
                 <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${speeding.length ? "border-[#D85A30]" : t.finished ? "border-coral" : "border-teal"}`}>
                   <button className="w-full text-left" onClick={() => setOpenTeam(open ? null : t.id)}>
                     <div className="flex items-center gap-2 font-bold">
-                      <span className="inline-block h-3 w-3 rounded-full" style={{ background: TEAM_COLORS[i % 4] }} />
+                      <span className="inline-block h-3 w-3 rounded-full" style={{ background: TEAM_COLORS[i % TEAM_COLORS.length] }} />
                       {t.name}
                       {speeding.length ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]">⚠️ {speeding.length}×</span> : null}
                       {peak != null ? <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${peakOver ? "bg-[#FDECE7] text-[#D85A30]" : "bg-teal-light text-teal-dark"}`}>🏎️ {peak} km/u</span> : null}
