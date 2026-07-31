@@ -522,7 +522,7 @@ function LegNav({
         <p className="mb-2 text-[11px] text-polder-grey">Tik een stap aan om &apos;m af te vinken zodra je &apos;m gepasseerd bent.</p>
       ) : null}
 
-      {leg.nav_mode === "compass" ? <LiveCompass target={target} /> : null}
+      {leg.nav_mode === "compass" ? <LiveCompass target={target} testMode={testMode} /> : null}
 
       {leg.nav_mode === "routebook" ? (
         (leg.turn_steps ?? []).length > 0 ? (
@@ -780,7 +780,7 @@ function screenAngle(): number {
   return typeof legacy === "number" ? legacy : 0;
 }
 
-function LiveCompass({ target }: { target: Point }) {
+function LiveCompass({ target, testMode }: { target: Point; testMode: boolean }) {
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
   const [acc, setAcc] = useState<number | null>(null); // gps accuracy (m)
   const [err, setErr] = useState(false);
@@ -942,15 +942,19 @@ function LiveCompass({ target }: { target: Point }) {
         <span className="text-sm text-polder-grey">tot het punt</span>
       </div>
 
-      {/* diagnostic line — so we can see whether sensor + gps actually work */}
+      {/* gps quality — safe to show (no coordinates leaked) */}
       <p className="mt-1 text-center text-[11px] text-polder-grey">
-        koers {heading != null ? `${Math.round(heading)}°` : "—"} ({usingGps ? "gps" : "kompas"})
-        {" · "}doel {bearing != null ? `${Math.round(bearing)}°` : "—"}
-        {" · "}gps {acc != null ? `±${acc} m` : "—"}
+        gps {acc != null ? (acc >= 1000 ? `±${(acc / 1000).toFixed(1)} km` : `±${acc} m`) : "—"}
       </p>
-      <p className="mt-0.5 text-center text-[10px] text-polder-grey/80">
-        jij {pos ? `${pos.lat.toFixed(4)},${pos.lng.toFixed(4)}` : "—"} → doel {hasTarget ? `${target.lat!.toFixed(4)},${target.lng!.toFixed(4)}` : "—"}
-      </p>
+      {/* raw diagnostics (incl. coordinates) ONLY in test mode — players must
+          not see the target coordinates or they could copy them into Maps */}
+      {testMode ? (
+        <p className="mt-0.5 text-center text-[10px] text-polder-grey/80">
+          koers {heading != null ? `${Math.round(heading)}°` : "—"} ({usingGps ? "gps" : "kompas"})
+          {" · "}doel {bearing != null ? `${Math.round(bearing)}°` : "—"}
+          {" · "}jij {pos ? `${pos.lat.toFixed(4)},${pos.lng.toFixed(4)}` : "—"} → {hasTarget ? `${target.lat!.toFixed(4)},${target.lng!.toFixed(4)}` : "—"}
+        </p>
+      ) : null}
 
       {coarse ? (
         <div className="mt-2 rounded-soft bg-coral-light p-2.5 text-[12px] text-coral">
