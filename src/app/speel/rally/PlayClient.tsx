@@ -1172,6 +1172,7 @@ function SpeedTest({
   send: (s: Record<string, unknown>) => Promise<{ ok: boolean }>;
 }) {
   const target = Number(cfg.target ?? 30);
+  const courseM = Math.max(0, Number(cfg.distanceM ?? 0)); // 0 = manual finish
   const [phase, setPhase] = useState<"idle" | "measuring">("idle");
   const [distM, setDistM] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -1179,48 +1180,61 @@ function SpeedTest({
   const startRef = useRef(0);
   const lastRef = useRef<{ lat: number; lng: number } | null>(null);
   const distRef = useRef(0);
+  const doneRef = useRef(false);
   const [testVal, setTestVal] = useState<number>(target);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => {
+  const stop = () => {
     if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
-  }, []);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+  };
+  useEffect(() => () => stop(), []);
 
   const avg = elapsed > 0 ? (distM / 1000) / (elapsed / 3600) : 0;
+
+  function submit(measured: number) {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    stop();
+    send({ value: Math.round(measured) });
+  }
 
   function start() {
     if (!("geolocation" in navigator)) return;
     setPhase("measuring");
+    doneRef.current = false;
     startRef.current = Date.now();
     distRef.current = 0;
     lastRef.current = null;
     setDistM(0);
     setElapsed(0);
-    const tick = setInterval(() => setElapsed((Date.now() - startRef.current) / 1000), 1000);
+    intervalRef.current = setInterval(() => setElapsed((Date.now() - startRef.current) / 1000), 1000);
     watchRef.current = navigator.geolocation.watchPosition(
       (p) => {
         const cur = { lat: p.coords.latitude, lng: p.coords.longitude };
         if (lastRef.current) distRef.current += haversine(lastRef.current, cur);
         lastRef.current = cur;
         setDistM(Math.round(distRef.current));
+        // auto-finish once the configured course length is covered → everyone
+        // is judged over the same distance.
+        if (courseM > 0 && distRef.current >= courseM) {
+          const secs = (Date.now() - startRef.current) / 1000;
+          const a = secs > 0 ? (courseM / 1000) / (secs / 3600) : 0;
+          submit(a);
+        }
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
     );
-    // store interval id on the window-less closure via watch cleanup
-    intervalRef.current = tick;
   }
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function finish() {
-    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    send({ value: Math.round(avg) });
-  }
+  const pct = courseM > 0 ? Math.min(100, Math.round((distM / courseM) * 100)) : 0;
 
   return (
     <div className="space-y-2">
       <p className="text-[13px] text-polder-grey">
-        Doel: gemiddeld <b className="text-coral">{target} km/u</b>. Druk op start aan het begin van het traject; de gps meet je gemiddelde tot het eindpunt.
+        Doel: gemiddeld <b className="text-coral">{target} km/u</b>
+        {courseM > 0 ? <> over <b>{courseM >= 1000 ? `${(courseM / 1000).toFixed(1)} km` : `${courseM} m`}</b></> : null}. Druk op start aan het begin van het traject; de gps meet je gemiddelde{courseM > 0 ? " en stopt automatisch op het eindpunt" : " tot je op het eindpunt drukt"}.
       </p>
       {phase === "idle" ? (
         <button className="btn btn-primary w-full" disabled={busy} onClick={start}>▶️ Start meten</button>
@@ -1231,13 +1245,19 @@ function SpeedTest({
             <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-teal-dark">{Math.floor(elapsed / 60)}:{String(Math.floor(elapsed % 60)).padStart(2, "0")}</b><span className="text-[11px] text-polder-grey">tijd</span></div>
             <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-coral">{Math.round(avg)}</b><span className="text-[11px] text-polder-grey">km/u nu</span></div>
           </div>
-          <button className="btn btn-coral w-full" disabled={busy} onClick={finish}>🏁 Eindpunt bereikt — dien in</button>
+          {courseM > 0 ? (
+            <div>
+              <div className="h-2 overflow-hidden rounded bg-polder-line"><i className="block h-full rounded bg-coral" style={{ width: `${pct}%` }} /></div>
+              <p className="mt-0.5 text-center text-[11px] text-polder-grey">{distM} van {courseM} m — stopt automatisch op het eindpunt</p>
+            </div>
+          ) : null}
+          <button className="btn btn-coral w-full" disabled={busy} onClick={() => submit(avg)}>🏁 Eindpunt bereikt — dien nu in</button>
         </div>
       )}
       {testMode ? (
         <div className="rounded-soft border border-dashed border-[#C9A227] p-2">
           <p className="mb-1 text-[11px] font-bold text-[#7A5D00]">🧪 Test: kies een gemiddelde</p>
-          <input type="range" min={Number(cfg.min ?? 20)} max={Number(cfg.max ?? 56)} value={testVal} onChange={(e) => setTestVal(Number(e.target.value))} className="w-full accent-coral" />
+          <input type="range" min={Math.max(5, target - 25)} max={target + 25} value={testVal} onChange={(e) => setTestVal(Number(e.target.value))} className="w-full accent-coral" />
           <button className="btn-demo mt-1" disabled={busy} onClick={() => send({ value: testVal })}>🧪 Simuleer {testVal} km/u</button>
         </div>
       ) : null}

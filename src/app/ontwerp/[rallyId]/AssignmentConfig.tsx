@@ -176,20 +176,18 @@ export default function AssignmentConfig({
             <input type="number" defaultValue={num(cfg.target, 30)} className="input" onBlur={(e) => savePublic({ target: num(e.target.value, 30) })} />
           </div>
           <div>
-            <label className="field-label">Max. punten</label>
+            <label className="field-label">Parcourslengte (m)</label>
+            <input type="number" min={0} defaultValue={num(cfg.distanceM, 1000)} className="input" placeholder="bijv. 1000" onBlur={(e) => savePublic({ distanceM: num(e.target.value, 0) })} />
+          </div>
+          <div>
+            <label className="field-label">Punten bij precies op doel</label>
             <input type="number" defaultValue={num(cfg.maxPoints, assignment.points)} className="input" onBlur={(e) => savePublic({ maxPoints: num(e.target.value) })} />
           </div>
           <div>
             <label className="field-label">Aftrek per km/u afwijking</label>
             <input type="number" defaultValue={num(cfg.penaltyPerKmh, 3)} className="input" onBlur={(e) => savePublic({ penaltyPerKmh: num(e.target.value, 3) })} />
           </div>
-          <div>
-            <label className="field-label">Schuif min–max</label>
-            <div className="flex gap-1">
-              <input type="number" defaultValue={num(cfg.min, 20)} className="input" onBlur={(e) => savePublic({ min: num(e.target.value, 20) })} />
-              <input type="number" defaultValue={num(cfg.max, 56)} className="input" onBlur={(e) => savePublic({ max: num(e.target.value, 56) })} />
-            </div>
-          </div>
+          <p className="col-span-2 text-xs text-polder-grey">De gps meet het gemiddelde over de parcourslengte; bij de doel-snelheid krijgt het team de volle punten, minus de aftrek per km/u dat ze eronder of erboven zaten. Parcourslengte 0 = ze stoppen zelf op het eindpunt.</p>
         </div>
       );
 
