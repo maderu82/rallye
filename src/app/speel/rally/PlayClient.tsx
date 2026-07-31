@@ -768,9 +768,12 @@ function screenAngle(): number {
 function LiveCompass({ target }: { target: Point }) {
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
   const [err, setErr] = useState(false);
-  const [heading, setHeading] = useState<number | null>(null);
+  const [compass, setCompass] = useState<number | null>(null); // magnetometer heading
+  const [gpsHeading, setGpsHeading] = useState<number | null>(null); // course over ground
+  const [moving, setMoving] = useState(false);
   const [needPerm, setNeedPerm] = useState(false);
   const offRef = useRef<(() => void) | null>(null);
+  const srcRef = useRef<null | "webkit" | "absolute">(null); // lock one heading source
 
   useEffect(() => {
     if (!("geolocation" in navigator)) {
@@ -778,7 +781,20 @@ function LiveCompass({ target }: { target: Point }) {
       return;
     }
     const id = navigator.geolocation.watchPosition(
-      (p) => setPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      (p) => {
+        setErr(false);
+        setPos({ lat: p.coords.latitude, lng: p.coords.longitude });
+        // When moving, the GPS course over ground is a rock-solid heading that
+        // needs no magnetometer/calibration → use it instead of the compass.
+        const spd = p.coords.speed;
+        const crs = p.coords.heading;
+        if (typeof spd === "number" && spd >= 1.4 && typeof crs === "number" && !Number.isNaN(crs)) {
+          setGpsHeading((crs + 360) % 360);
+          setMoving(true);
+        } else if (typeof spd === "number" && spd < 0.8) {
+          setMoving(false);
+        }
+      },
       () => setErr(true),
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 },
     );
@@ -789,25 +805,27 @@ function LiveCompass({ target }: { target: Point }) {
     offRef.current?.(); // avoid duplicate listeners on re-activate
     const handler = (e: Event) => {
       const oe = e as OrientationEvent;
+      const hasWebkit = typeof oe.webkitCompassHeading === "number" && !Number.isNaN(oe.webkitCompassHeading);
+      // Lock to the FIRST usable source and ignore the other forever — mixing
+      // iOS webkit heading with a relative/absolute alpha causes 180° flips.
+      if (srcRef.current == null) srcRef.current = hasWebkit ? "webkit" : oe.absolute === true ? "absolute" : null;
       let h: number | null = null;
-      if (typeof oe.webkitCompassHeading === "number" && !Number.isNaN(oe.webkitCompassHeading)) {
-        // iOS: a true compass heading (0 = north, clockwise).
-        h = oe.webkitCompassHeading;
-      } else if (oe.absolute === true && typeof oe.alpha === "number") {
-        // Android absolute orientation: convert alpha → compass heading and
-        // correct for the screen rotation. Ignore NON-absolute events (their
-        // alpha is relative to an arbitrary start → jumps around).
-        h = (360 - oe.alpha + screenAngle()) % 360;
+      if (srcRef.current === "webkit") {
+        if (!hasWebkit) return;
+        h = oe.webkitCompassHeading as number; // iOS true heading (0 = N, cw)
+      } else if (srcRef.current === "absolute") {
+        if (oe.absolute !== true || typeof oe.alpha !== "number") return;
+        h = (360 - oe.alpha + screenAngle()) % 360; // Android absolute
       } else {
-        return; // relative / unusable event — skip it entirely
+        return;
       }
       if (h == null || Number.isNaN(h)) return;
       const next = (h + 360) % 360;
-      // circular low-pass smoothing to stop the arrow/colour from flickering
-      setHeading((prev) => {
+      // heavy circular low-pass smoothing so the arrow glides, never snaps
+      setCompass((prev) => {
         if (prev == null) return next;
         const diff = ((next - prev + 540) % 360) - 180;
-        return (prev + diff * 0.25 + 360) % 360;
+        return (prev + diff * 0.15 + 360) % 360;
       });
     };
     window.addEventListener("deviceorientationabsolute", handler, true);
@@ -854,12 +872,16 @@ function LiveCompass({ target }: { target: Point }) {
   const distance =
     pos && hasTarget ? Math.round(haversine(pos, { lat: target.lat!, lng: target.lng! })) : null;
 
-  // Arrow points to the target RELATIVE to the phone heading (turn until it
-  // points up). Only shown when we actually have a heading — otherwise the
-  // direction would be meaningless/misleading, so we prompt to calibrate.
+  // Effective heading: while moving use the GPS course over ground (stable, no
+  // magnetometer); when stopped fall back to the compass. This kills the
+  // side-to-side flipping of the magnetometer while driving.
+  const usingGps = moving && gpsHeading != null;
+  const heading = usingGps ? gpsHeading : compass;
+
+  // Arrow points to the target relative to that heading (up = go this way).
   const hasHeading = heading != null && bearing != null;
   const arrowRot = hasHeading ? (bearing! - heading! + 360) % 360 : 0;
-  const pointingUp = hasHeading && Math.abs(((arrowRot + 180) % 360) - 180) < 12;
+  const pointingUp = hasHeading && Math.abs(((arrowRot + 180) % 360) - 180) < 18;
 
   return (
     <div className="flex flex-col items-center py-1.5">
@@ -889,8 +911,14 @@ function LiveCompass({ target }: { target: Point }) {
 
       {hasHeading ? (
         <p className="mt-2 text-center text-xs text-polder-grey">
-          {pointingUp ? "Goed zo — loop rechtdoor deze kant op! 🚶" : "Draai tot de pijl recht omhoog wijst en loop die kant op."}
-          <button onClick={enableCompass} className="ml-1 underline">opnieuw ijken</button>
+          {pointingUp
+            ? usingGps
+              ? "Goed zo — recht vooruit! 🚗"
+              : "Goed zo — deze kant op! 🚶"
+            : usingGps
+              ? "De pijl wijst t.o.v. je rijrichting — recht vooruit = de goede kant."
+              : "Draai tot de pijl recht omhoog wijst en loop die kant op."}
+          {!usingGps ? <button onClick={enableCompass} className="ml-1 underline">opnieuw ijken</button> : null}
         </p>
       ) : (
         <>
