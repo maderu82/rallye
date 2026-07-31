@@ -87,7 +87,7 @@ type LiveTeam = {
 };
 type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; isVideo: boolean; when: string };
 type LegSpeed = { from: string; to: string; kmh: number; limit: number; over: boolean };
-type TeamTrail = { path: [number, number][]; peakKmh: number | null };
+type TeamTrail = { path: [number, number][]; peakKmh: number | null; lastAcc: number | null };
 type Sel = { kind: "point" | "leg"; id: string } | null;
 
 export default function EditorClient({
@@ -1143,6 +1143,7 @@ function LiveView({
               const speeding = legSpeeds.filter((s) => s.over);
               const peak = trails[t.id]?.peakKmh ?? null;
               const peakOver = peak != null && defaultLimit != null && peak > defaultLimit;
+              const coarseGps = (trails[t.id]?.lastAcc ?? 0) > 150;
               const open = openTeam === t.id;
               return (
                 <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${speeding.length ? "border-[#D85A30]" : t.finished ? "border-coral" : "border-teal"}`}>
@@ -1152,6 +1153,7 @@ function LiveView({
                       {t.name}
                       {speeding.length ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]">⚠️ {speeding.length}×</span> : null}
                       {peak != null ? <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${peakOver ? "bg-[#FDECE7] text-[#D85A30]" : "bg-teal-light text-teal-dark"}`}>🏎️ {peak} km/u</span> : null}
+                      {coarseGps ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]" title="Deze telefoon deelt een grove locatie — vraag ze nauwkeurige locatie aan te zetten.">📡 grove gps</span> : null}
                       <span className="ml-auto text-teal-dark">{t.score} ptn</span>
                       <span className="text-xs text-polder-grey">{open ? "▲" : "▼"}</span>
                     </div>
