@@ -767,10 +767,10 @@ function screenAngle(): number {
 
 function LiveCompass({ target }: { target: Point }) {
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [acc, setAcc] = useState<number | null>(null); // gps accuracy (m)
   const [err, setErr] = useState(false);
   const [compass, setCompass] = useState<number | null>(null); // magnetometer heading
   const [gpsHeading, setGpsHeading] = useState<number | null>(null); // course over ground
-  const [moving, setMoving] = useState(false);
   const [needPerm, setNeedPerm] = useState(false);
   const offRef = useRef<(() => void) | null>(null);
   const srcRef = useRef<null | "webkit" | "absolute">(null); // lock one heading source
@@ -783,20 +783,21 @@ function LiveCompass({ target }: { target: Point }) {
     const id = navigator.geolocation.watchPosition(
       (p) => {
         setErr(false);
-        setPos({ lat: p.coords.latitude, lng: p.coords.longitude });
-        // When moving, the GPS course over ground is a rock-solid heading that
-        // needs no magnetometer/calibration → use it instead of the compass.
+        const a = p.coords.accuracy || 0;
+        setAcc(Math.round(a));
+        // Ignore very coarse fixes (network location, km-scale) for the bearing —
+        // they point the arrow the wrong way. Keep the last good position.
+        setPos((prev) => (a > 0 && a <= 80 ? { lat: p.coords.latitude, lng: p.coords.longitude } : prev ?? { lat: p.coords.latitude, lng: p.coords.longitude }));
+        // GPS course over ground = a heading that needs no magnetometer; use it
+        // only as a fallback when the compass isn't available.
         const spd = p.coords.speed;
         const crs = p.coords.heading;
         if (typeof spd === "number" && spd >= 1.4 && typeof crs === "number" && !Number.isNaN(crs)) {
           setGpsHeading((crs + 360) % 360);
-          setMoving(true);
-        } else if (typeof spd === "number" && spd < 0.8) {
-          setMoving(false);
         }
       },
       () => setErr(true),
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 },
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
@@ -821,11 +822,11 @@ function LiveCompass({ target }: { target: Point }) {
       }
       if (h == null || Number.isNaN(h)) return;
       const next = (h + 360) % 360;
-      // heavy circular low-pass smoothing so the arrow glides, never snaps
+      // circular low-pass smoothing so the arrow glides, without lagging too much
       setCompass((prev) => {
         if (prev == null) return next;
         const diff = ((next - prev + 540) % 360) - 180;
-        return (prev + diff * 0.15 + 360) % 360;
+        return (prev + diff * 0.35 + 360) % 360;
       });
     };
     window.addEventListener("deviceorientationabsolute", handler, true);
@@ -872,11 +873,11 @@ function LiveCompass({ target }: { target: Point }) {
   const distance =
     pos && hasTarget ? Math.round(haversine(pos, { lat: target.lat!, lng: target.lng! })) : null;
 
-  // Effective heading: while moving use the GPS course over ground (stable, no
-  // magnetometer); when stopped fall back to the compass. This kills the
-  // side-to-side flipping of the magnetometer while driving.
-  const usingGps = moving && gpsHeading != null;
-  const heading = usingGps ? gpsHeading : compass;
+  // Heading: compass (magnetometer) is primary so N + arrow stay consistent
+  // when you turn the phone; GPS course is only a fallback when there's no
+  // compass reading (e.g. permission not granted but you're moving).
+  const usingGps = compass == null && gpsHeading != null;
+  const heading = compass != null ? compass : gpsHeading;
 
   // Arrow points to the target relative to that heading (up = go this way).
   const hasHeading = heading != null;
@@ -922,10 +923,11 @@ function LiveCompass({ target }: { target: Point }) {
         <span className="text-sm text-polder-grey">tot het punt</span>
       </div>
 
-      {/* diagnostic line — so we can see whether the sensor actually works */}
+      {/* diagnostic line — so we can see whether sensor + gps actually work */}
       <p className="mt-1 text-center text-[11px] text-polder-grey">
         koers {heading != null ? `${Math.round(heading)}°` : "—"} ({usingGps ? "gps" : "kompas"})
-        {" · "}richting doel {bearing != null ? `${Math.round(bearing)}°` : "—"}
+        {" · "}doel {bearing != null ? `${Math.round(bearing)}°` : "—"}
+        {" · "}gps {acc != null ? `±${acc} m` : "—"}
       </p>
 
       {hasHeading ? (
