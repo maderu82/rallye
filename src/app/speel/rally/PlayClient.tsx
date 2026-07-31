@@ -879,28 +879,41 @@ function LiveCompass({ target }: { target: Point }) {
   const heading = usingGps ? gpsHeading : compass;
 
   // Arrow points to the target relative to that heading (up = go this way).
-  const hasHeading = heading != null && bearing != null;
-  const arrowRot = hasHeading ? (bearing! - heading! + 360) % 360 : 0;
-  const pointingUp = hasHeading && Math.abs(((arrowRot + 180) % 360) - 180) < 18;
+  const hasHeading = heading != null;
+  const targetRot = hasHeading && bearing != null ? (bearing - heading! + 360) % 360 : bearing ?? 0;
+  const pointingUp = hasHeading && bearing != null && Math.abs(((targetRot + 180) % 360) - 180) < 18;
+  const northRot = hasHeading ? (-heading! + 360) % 360 : 0;
 
   return (
     <div className="flex flex-col items-center py-1.5">
-      {hasHeading ? (
-        <div className={`flex h-40 w-40 items-center justify-center rounded-full ${pointingUp ? "bg-teal-light" : "bg-paper"}`}>
+      <div className={`relative flex h-44 w-44 items-center justify-center rounded-full border-2 ${pointingUp ? "border-teal bg-teal-light" : "border-polder-line bg-paper"}`}>
+        {/* fixed reference: the top of the dial = the way you face / drive */}
+        <div className="absolute -top-1 text-[10px] font-bold text-polder-grey">▲ voor je</div>
+
+        {/* compass ring: N/E/S/W rotate so N points to real north */}
+        <div
+          className="absolute inset-2 rounded-full"
+          style={{ transform: `rotate(${northRot}deg)`, transition: "transform .2s ease" }}
+        >
+          <span className="absolute left-1/2 top-0 -translate-x-1/2 text-xs font-bold text-coral">N</span>
+          <span className="absolute left-1/2 bottom-0 -translate-x-1/2 text-[11px] font-bold text-polder-grey">Z</span>
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-polder-grey">W</span>
+          <span className="absolute right-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-polder-grey">O</span>
+        </div>
+
+        {/* target arrow: points toward the destination */}
+        {bearing != null ? (
           <svg
             viewBox="0 0 100 100"
-            className="h-28 w-28"
-            style={{ transform: `rotate(${arrowRot}deg)`, transition: "transform .15s ease" }}
+            className="h-32 w-32"
+            style={{ transform: `rotate(${targetRot}deg)`, transition: "transform .2s ease" }}
           >
-            <path d="M50 6 L74 62 L50 50 L26 62 Z" fill={pointingUp ? "#1D9E75" : "#D85A30"} />
+            <path d="M50 10 L70 60 L50 50 L30 60 Z" fill={pointingUp ? "#1D9E75" : "#D85A30"} />
           </svg>
-        </div>
-      ) : (
-        <div className="flex h-40 w-40 flex-col items-center justify-center rounded-full bg-paper text-center">
-          <div className="text-5xl">🧭</div>
-          <p className="mt-1 px-4 text-[11px] font-semibold text-polder-grey">Kompas nog niet actief</p>
-        </div>
-      )}
+        ) : (
+          <div className="text-4xl">🧭</div>
+        )}
+      </div>
 
       <div className="mt-3 text-center">
         <b className="block text-[26px] text-coral">
@@ -909,29 +922,24 @@ function LiveCompass({ target }: { target: Point }) {
         <span className="text-sm text-polder-grey">tot het punt</span>
       </div>
 
+      {/* diagnostic line — so we can see whether the sensor actually works */}
+      <p className="mt-1 text-center text-[11px] text-polder-grey">
+        koers {heading != null ? `${Math.round(heading)}°` : "—"} ({usingGps ? "gps" : "kompas"})
+        {" · "}richting doel {bearing != null ? `${Math.round(bearing)}°` : "—"}
+      </p>
+
       {hasHeading ? (
-        <p className="mt-2 text-center text-xs text-polder-grey">
-          {pointingUp
-            ? usingGps
-              ? "Goed zo — recht vooruit! 🚗"
-              : "Goed zo — deze kant op! 🚶"
-            : usingGps
-              ? "De pijl wijst t.o.v. je rijrichting — recht vooruit = de goede kant."
-              : "Draai tot de pijl recht omhoog wijst en loop die kant op."}
-          {!usingGps ? <button onClick={enableCompass} className="ml-1 underline">opnieuw ijken</button> : null}
+        <p className="mt-1 text-center text-xs font-semibold text-polder-grey">
+          {pointingUp ? "Goed zo — recht vooruit! ✅" : "Draai/rijd tot de gekleurde pijl naar boven (▲) wijst."}
         </p>
       ) : (
-        <>
-          <button className="btn btn-primary mt-2 w-full" onClick={enableCompass}>
-            🧭 Kompas activeren / ijken
-          </button>
-          <p className="mt-1 text-center text-[11px] text-polder-grey">
-            {err
-              ? "Zet ook gps/locatie aan voor de afstand."
-              : "Sta bewegingstoegang toe en beweeg je telefoon een paar keer in een liggende 8-vorm om het kompas te ijken."}
-          </p>
-        </>
+        <button className="btn btn-primary mt-2 w-full" onClick={enableCompass}>
+          🧭 Kompas activeren / ijken
+        </button>
       )}
+      <button onClick={enableCompass} className="mt-1 text-[11px] text-polder-grey underline">
+        kompas opnieuw ijken
+      </button>
     </div>
   );
 }
