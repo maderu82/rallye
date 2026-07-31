@@ -785,9 +785,10 @@ function LiveCompass({ target }: { target: Point }) {
         setErr(false);
         const a = p.coords.accuracy || 0;
         setAcc(Math.round(a));
-        // Ignore very coarse fixes (network location, km-scale) for the bearing —
-        // they point the arrow the wrong way. Keep the last good position.
-        setPos((prev) => (a > 0 && a <= 80 ? { lat: p.coords.latitude, lng: p.coords.longitude } : prev ?? { lat: p.coords.latitude, lng: p.coords.longitude }));
+        const fix = { lat: p.coords.latitude, lng: p.coords.longitude };
+        // Use the latest fix; only reject an absurd one (km-scale) if we already
+        // have a position — so a coarse fix never freezes or wildly swings us.
+        setPos((prev) => (prev && a > 1000 ? prev : fix));
         // GPS course over ground = a heading that needs no magnetometer; use it
         // only as a fallback when the compass isn't available.
         const spd = p.coords.speed;
@@ -928,6 +929,9 @@ function LiveCompass({ target }: { target: Point }) {
         koers {heading != null ? `${Math.round(heading)}°` : "—"} ({usingGps ? "gps" : "kompas"})
         {" · "}doel {bearing != null ? `${Math.round(bearing)}°` : "—"}
         {" · "}gps {acc != null ? `±${acc} m` : "—"}
+      </p>
+      <p className="mt-0.5 text-center text-[10px] text-polder-grey/80">
+        jij {pos ? `${pos.lat.toFixed(4)},${pos.lng.toFixed(4)}` : "—"} → doel {hasTarget ? `${target.lat!.toFixed(4)},${target.lng!.toFixed(4)}` : "—"}
       </p>
 
       {hasHeading ? (
