@@ -885,6 +885,9 @@ function LiveCompass({ target }: { target: Point }) {
   const targetRot = hasHeading && bearing != null ? (bearing - heading! + 360) % 360 : bearing ?? 0;
   const pointingUp = hasHeading && bearing != null && Math.abs(((targetRot + 180) % 360) - 180) < 18;
   const northRot = hasHeading ? (-heading! + 360) % 360 : 0;
+  // A coarse fix (>150 m, i.e. network/cell location) makes the direction
+  // meaningless — almost always iOS "Precise Location" being off for the site.
+  const coarse = acc != null && acc > 150;
 
   return (
     <div className="flex flex-col items-center py-1.5">
@@ -903,11 +906,11 @@ function LiveCompass({ target }: { target: Point }) {
           <span className="absolute right-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-polder-grey">O</span>
         </div>
 
-        {/* target arrow: points toward the destination */}
+        {/* target arrow: points toward the destination (dimmed if gps is coarse) */}
         {bearing != null ? (
           <svg
             viewBox="0 0 100 100"
-            className="h-32 w-32"
+            className={`h-32 w-32 ${coarse ? "opacity-30" : ""}`}
             style={{ transform: `rotate(${targetRot}deg)`, transition: "transform .2s ease" }}
           >
             <path d="M50 10 L70 60 L50 50 L30 60 Z" fill={pointingUp ? "#1D9E75" : "#D85A30"} />
@@ -934,7 +937,14 @@ function LiveCompass({ target }: { target: Point }) {
         jij {pos ? `${pos.lat.toFixed(4)},${pos.lng.toFixed(4)}` : "—"} → doel {hasTarget ? `${target.lat!.toFixed(4)},${target.lng!.toFixed(4)}` : "—"}
       </p>
 
-      {hasHeading ? (
+      {coarse ? (
+        <div className="mt-2 rounded-soft bg-coral-light p-2.5 text-[12px] text-coral">
+          📡 <b>Je locatie is te grof (±{acc && acc >= 1000 ? `${(acc / 1000).toFixed(1)} km` : `${acc} m`})</b>, dus de richting klopt nog niet. Zet <b>nauwkeurige locatie</b> aan:
+          <span className="mt-1 block text-[11px] text-polder-grey">
+            iPhone: Instellingen → Privacy &amp; beveiliging → Locatievoorzieningen → Safari → <b>Nauwkeurige locatie AAN</b>. Android: Chrome → siterechten → Locatie → <b>Nauwkeurig</b>. Ga daarna naar buiten met vrij zicht.
+          </span>
+        </div>
+      ) : hasHeading ? (
         <p className="mt-1 text-center text-xs font-semibold text-polder-grey">
           {pointingUp ? "Goed zo — recht vooruit! ✅" : "Draai/rijd tot de gekleurde pijl naar boven (▲) wijst."}
         </p>
