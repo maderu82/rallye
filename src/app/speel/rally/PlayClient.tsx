@@ -133,6 +133,8 @@ export default function PlayClient({
   const rallyId = state.rally.id;
   const teamId = state.team.id;
   const [geoDenied, setGeoDenied] = useState(false);
+  const [gpsAcc, setGpsAcc] = useState<number | null>(null);
+  const [gpsWarnHidden, setGpsWarnHidden] = useState(false);
 
   // Ask for location up front so the browser prompt appears at the start of the
   // rally (GPS is needed for unlocking assignments and for the compass).
@@ -161,6 +163,7 @@ export default function PlayClient({
     let last = 0;
     const id = navigator.geolocation.watchPosition(
       (p) => {
+        setGpsAcc(Math.round(p.coords.accuracy || 0));
         const now = Date.now();
         if (now - last < 15000) return; // at most every 15s
         last = now;
@@ -249,6 +252,18 @@ export default function PlayClient({
           <form action={endTestPlay}>
             <button type="submit" className="rounded-full bg-[#7A5D00] px-2.5 py-0.5 text-white">✖ Einde test</button>
           </form>
+        </div>
+      ) : null}
+
+      {gpsAcc != null && gpsAcc > 150 && !gpsWarnHidden ? (
+        <div className="flex items-start gap-2 bg-coral-light px-4 py-2 text-[12px] text-coral">
+          <div className="flex-1">
+            📡 <b>Onnauwkeurige locatie (±{gpsAcc >= 1000 ? `${(gpsAcc / 1000).toFixed(1)} km` : `${gpsAcc} m`}).</b> Zet <b>nauwkeurige locatie</b> aan, anders kloppen kaart, kompas en aankomst niet.
+            <span className="mt-0.5 block text-[11px] text-polder-grey">
+              iPhone: Instellingen → Privacy → Locatievoorzieningen → Safari → <b>Nauwkeurige locatie</b> aan. Android: Chrome → siterechten → Locatie → <b>Nauwkeurig</b>.
+            </span>
+          </div>
+          <button className="shrink-0 font-bold" onClick={() => setGpsWarnHidden(true)}>✕</button>
         </div>
       ) : null}
       <header
