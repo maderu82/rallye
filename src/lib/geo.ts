@@ -21,12 +21,16 @@ export async function fetchRoadRoute(
   waypoints: LL[],
 ): Promise<{ route: [number, number][]; legs: number[]; legGeoms: [number, number][][] } | null> {
   if (waypoints.length < 2) return null;
+  // Give up after 7s so a slow/overloaded public OSRM never hangs the editor;
+  // callers fall back to straight lines when this returns null.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 7000);
   try {
     const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(";");
     // steps=true gives per-leg geometry so we can read the *real* road angle at
     // each turn point (much better than the straight line between clicks).
     const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) return null;
     const data = await res.json();
     const r = data.routes?.[0];
@@ -44,6 +48,8 @@ export async function fetchRoadRoute(
     return { route, legs, legGeoms };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

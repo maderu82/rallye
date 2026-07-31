@@ -793,6 +793,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   const end = toPoint?.lat != null && toPoint?.lng != null ? { lat: toPoint.lat, lng: toPoint.lng } : null;
   const [addMode, setAddMode] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [routeFailed, setRouteFailed] = useState(false);
   const [routing, setRouting] = useState(false);
 
   // Steps aligned to the turn points (one per point). The final "arrive" step
@@ -811,6 +812,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     setRouting(true);
     const road = await fetchRoadRoute(p);
     setRouting(false);
+    setRouteFailed(p.length >= 2 && road == null);
     const auto = deriveRoadbook(p, [], road?.legs); // nextPoints.length + 1 entries (last = arrive)
     // Prefer the real road-angle suggestion from the leg geometry; fall back to
     // the straight-line derivation when routing failed.
@@ -860,6 +862,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       </button>
       <button className="btn btn-ghost text-sm" onClick={() => void reroute(turnPoints, curPerPoint())}>🛣️ Route bijwerken</button>
       {routing ? <span className="text-xs text-polder-grey">🛣️ route berekenen…</span> : null}
+      {!routing && routeFailed ? <span className="text-xs text-coral">⚠️ routeserver even niet bereikbaar — rechte lijnen gebruikt. Klik &ldquo;Route bijwerken&rdquo; om opnieuw te proberen.</span> : null}
     </div>
   );
 
