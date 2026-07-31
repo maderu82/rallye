@@ -1097,9 +1097,14 @@ function LiveView({
             })
             .filter((x): x is MapTeam => x !== null)}
           trails={teams
-            .map((t, i) => ({ color: TEAM_COLORS[i % 4], path: trails[t.id]?.path ?? [] }))
-            .filter((tr) => tr.path.length >= 2)}
+            // when a team is opened, show only their trail (isolate the route)
+            .map((t, i) => ({ id: t.id, color: TEAM_COLORS[i % 4], path: trails[t.id]?.path ?? [] }))
+            .filter((tr) => tr.path.length >= 2 && (!openTeam || tr.id === openTeam))
+            .map(({ color, path }) => ({ color, path }))}
         />
+        <p className="mt-2 text-xs text-polder-grey">
+          {openTeam ? "Je ziet nu het spoor van het geopende team. Klik het team dicht voor alle sporen." : "Tip: klik hieronder een team open om alleen hún gereden spoor op de kaart te zien."}
+        </p>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <div className="rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
             👀 Alleen meekijken · <span className="font-bold text-teal">● live</span> — bijgewerkt zodra teams scoren.
