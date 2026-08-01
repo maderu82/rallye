@@ -73,7 +73,10 @@ export async function joinRally(formData: FormData) {
       .insert({ rally_id: rally.id, name: teamName })
       .select("session_token")
       .single();
-    if (error || !team) return { error: "Kon het team niet aanmaken. Probeer opnieuw." };
+    if (error || !team) {
+      const hint = error?.message ? ` (${error.message})` : "";
+      return { error: `Kon het team niet aanmaken. Probeer opnieuw.${hint}` };
+    }
     token = team.session_token;
   }
 

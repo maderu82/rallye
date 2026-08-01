@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { Assignment, Leg, Point, Rally } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import type { MapPoint, MapTeam } from "@/components/RallyMap";
@@ -904,6 +904,23 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
 
   // per-point dir/note/photo snapshot from the current steps, for preservation.
   const curPerPoint = () => turnPoints.map((_, i) => ({ dir: pointSteps[i]?.dir, note: pointSteps[i]?.note, photo: pointSteps[i]?.photo }));
+
+  // Legacy legs (drawn before the junction/tulip schema existed) have steps
+  // without roads/take, so the schema falls back to a single arrow. Recompute
+  // the route once on open to populate the real junction geometry — chosen
+  // directions and notes are preserved by reroute().
+  const autoFixed = useRef<string | null>(null);
+  useEffect(() => {
+    if (!vc.showArrow || !start || !end || turnPoints.length === 0) return;
+    if (autoFixed.current === leg.id) return;
+    const missing = pointSteps.some(
+      (s) => !(Array.isArray(s?.roads) && (s?.roads?.length ?? 0) >= 2 && typeof s?.take === "number"),
+    );
+    if (!missing) return;
+    autoFixed.current = leg.id;
+    void reroute(turnPoints, curPerPoint());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leg.id]);
 
   // Upload a junction photo for a step (foto-navigatie) to the public bucket.
   async function uploadPhoto(i: number, file: File) {
