@@ -118,6 +118,53 @@ export default function EditorClient({
   const [sel, setSel] = useState<Sel>(null);
   const [addMode, setAddMode] = useState(false);
   const [expandedMap, setExpandedMap] = useState(false);
+  const [recomputing, setRecomputing] = useState(false);
+
+  // Regenerate the tulip/junction geometry (roads + the road to take) for every
+  // roadbook-style leg in one go, via OSRM — so players see all roads at each
+  // junction. Chosen directions, notes, photos and radii are preserved.
+  async function recomputeAllSchemas() {
+    setRecomputing(true);
+    let ok = 0, failed = 0, skipped = 0;
+    for (let k = 0; k < legs.length; k++) {
+      const leg = legs[k];
+      const from = points[k];
+      const to = points[k + 1];
+      const tps = Array.isArray(leg.turn_points) ? leg.turn_points : [];
+      const wantsSchema = ["turn", "routebook", "cryptic", "photo_nav", "line"].includes(leg.nav_mode);
+      if (!wantsSchema || tps.length === 0 || from?.lat == null || from?.lng == null || to?.lat == null || to?.lng == null) {
+        skipped++;
+        continue;
+      }
+      const p = [{ lat: from.lat, lng: from.lng }, ...tps, { lat: to.lat, lng: to.lng }];
+      const road = await fetchRoadRoute(p);
+      if (!road) { failed++; continue; }
+      const existing: RoadbookStep[] = Array.isArray(leg.turn_steps) ? leg.turn_steps : [];
+      const auto = deriveRoadbook(p, [], road.legs);
+      const smartDirs = road.legGeoms ? roadbookDirsFromGeom(road.legGeoms) : null;
+      const arriveNote = existing.length > tps.length ? existing[existing.length - 1]?.note ?? "" : "";
+      const merged: RoadbookStep[] = auto.map((a, i) => {
+        if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveNote };
+        const pd = existing[i];
+        const suggested = smartDirs?.[i] ?? a.dir;
+        const jn = road.junctions?.[i];
+        return {
+          dist: a.dist,
+          dir: pd?.dir ?? suggested,
+          note: pd?.note ?? "",
+          ...(pd?.photo ? { photo: pd.photo } : {}),
+          ...(pd?.radius != null ? { radius: pd.radius } : {}),
+          ...(jn ? { roads: jn.roads, take: jn.take } : {}),
+        };
+      });
+      const res = await updateLeg(rally.id, leg.id, { turn_steps: merged, turn_route: road.route });
+      if (res && typeof res === "object" && "error" in res && (res as { error?: string }).error) failed++;
+      else ok++;
+    }
+    setRecomputing(false);
+    router.refresh();
+    alert(`Schema's herberekend.\n✓ bijgewerkt: ${ok}\n${failed ? `⚠️ routeserver even niet bereikbaar bij: ${failed} (probeer zo nog eens)\n` : ""}– overgeslagen (geen tussenpunten): ${skipped}`);
+  }
 
   function run(fn: () => Promise<unknown>) {
     start(async () => {
@@ -363,6 +410,14 @@ export default function EditorClient({
                 <input type="file" accept=".gpx,application/gpx+xml,text/xml" className="hidden" onChange={handleGpx} />
               </label>
               <button className="btn btn-ghost text-sm" onClick={() => setExpandedMap(true)}>⛶ Groot bewerken</button>
+              <button
+                className="btn btn-ghost text-sm"
+                disabled={recomputing}
+                title="Herbereken voor alle bolletje-pijltje/routeboek-trajecten de schema's (alle wegen op elk kruispunt) via de routeserver."
+                onClick={() => void recomputeAllSchemas()}
+              >
+                {recomputing ? "🔄 Schema's herberekenen…" : "🔄 Herbereken alle schema's"}
+              </button>
               {addMode ? <span className="chip chip-teal">Klik op de kaart om het punt te plaatsen (gps wordt automatisch ingevuld)</span> : null}
             </div>
             <RallyMap
