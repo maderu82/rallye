@@ -44,8 +44,11 @@ export interface ActionResult {
 // ── join ────────────────────────────────────────────────────────────────────
 export async function joinRally(formData: FormData) {
   // Normalize exactly like updateJoinCode stores it (upper-case, no internal
-  // whitespace) so a code typed with spaces/lower-case still matches.
-  const joinCode = String(formData.get("joinCode") ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  // whitespace) so a code typed with spaces/lower-case still matches. Every
+  // rally code starts with RLY-, so re-apply that prefix if a player typed only
+  // the part after it.
+  const raw = String(formData.get("joinCode") ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  const joinCode = raw && !raw.startsWith("RLY-") ? `RLY-${raw.replace(/^RLY-?/, "")}` : raw;
   const teamName = String(formData.get("teamName") ?? "").trim() || "Naamloos team";
   if (!joinCode) return { error: "Vul een teamcode in." };
 

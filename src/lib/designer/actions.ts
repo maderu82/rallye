@@ -79,9 +79,13 @@ export async function updateJoinCode(rallyId: string, code: string): Promise<{ e
   const db = await createClient();
   await requireUser(db);
   const clean = code.trim().toUpperCase().replace(/\s+/g, "");
-  if (clean.length < 3) return { error: "De teamcode moet minstens 3 tekens zijn." };
-  if (!/^[A-Z0-9-]+$/.test(clean)) return { error: "Alleen letters, cijfers en streepjes zijn toegestaan." };
-  const { error } = await db.from("rallies").update({ join_code: clean }).eq("id", rallyId);
+  // Every rally code starts with RLY-. Strip whatever prefix the organizer typed
+  // (RLY, RLY-, or none) and re-apply exactly one, so the part after it is theirs.
+  const body = clean.replace(/^RLY-?/, "");
+  if (body.length < 2) return { error: "De teamcode moet minstens 2 tekens na 'RLY-' hebben." };
+  if (!/^[A-Z0-9-]+$/.test(body)) return { error: "Alleen letters, cijfers en streepjes zijn toegestaan." };
+  const finalCode = `RLY-${body}`;
+  const { error } = await db.from("rallies").update({ join_code: finalCode }).eq("id", rallyId);
   if (error) {
     return { error: /duplicate|unique/i.test(error.message) ? "Deze teamcode is al in gebruik. Kies een andere." : error.message };
   }

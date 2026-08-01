@@ -228,16 +228,20 @@ export default function EditorClient({
 
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-polder-grey">
         <span>Teamcode voor spelers:</span>
-        <input
-          defaultValue={rally.join_code}
-          aria-label="Teamcode bewerken"
-          className="w-40 rounded-soft border-2 border-teal bg-white px-2 py-1 text-center text-sm font-bold uppercase tracking-wide text-teal-dark"
-          onBlur={(e) => {
-            const v = e.target.value.trim().toUpperCase();
-            if (v && v !== rally.join_code) run(() => updateJoinCode(rally.id, v));
-          }}
-        />
-        <span>✏️ pas gerust aan — deel deze code (of de QR) met je teams. Publiceer de rally zodat teams kunnen meedoen.</span>
+        <span className="flex items-stretch overflow-hidden rounded-soft border-2 border-teal">
+          <span className="flex items-center bg-teal px-2 text-sm font-bold text-white">RLY-</span>
+          <input
+            defaultValue={rally.join_code.replace(/^RLY-?/, "")}
+            aria-label="Teamcode bewerken (deel na RLY-)"
+            className="w-28 bg-white px-2 py-1 text-center text-sm font-bold uppercase tracking-wide text-teal-dark"
+            onBlur={(e) => {
+              const suffix = e.target.value.trim().toUpperCase().replace(/\s+/g, "").replace(/^RLY-?/, "");
+              const next = `RLY-${suffix}`;
+              if (suffix && next !== rally.join_code) run(() => updateJoinCode(rally.id, suffix));
+            }}
+          />
+        </span>
+        <span>✏️ elke rallycode begint met <b>RLY-</b> — pas alleen het deel erachter aan. Deel deze code (of de QR) met je teams en publiceer de rally.</span>
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-polder-grey">
