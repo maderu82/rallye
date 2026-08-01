@@ -262,10 +262,13 @@ export default function EditorClient({
         </div>
         <form action={startTestPlay.bind(null, rally.id)} className="flex items-center gap-1">
           <select name="fromStep" defaultValue="0" className="input px-2 py-2 text-sm" title="Vanaf welk punt wil je testen?">
+            <option value={0}>🚩 Vanaf de start</option>
             {points.filter((p) => p.kind === "waypoint").map((p, i) => (
-              <option key={p.id} value={i}>Vanaf {p.name}</option>
+              i === 0 ? null : <option key={p.id} value={i}>Vanaf {p.name}</option>
             ))}
-            <option value={points.filter((p) => p.kind === "waypoint").length}>Vanaf de finish</option>
+            {points.some((p) => p.kind === "finish") ? (
+              <option value={points.filter((p) => p.kind === "waypoint").length}>🏁 Vanaf de finish</option>
+            ) : null}
           </select>
           <button className="btn btn-purple" type="submit" title="Speel de rally zelf om te testen (met hulpknoppen)">▶️ Test</button>
         </form>
