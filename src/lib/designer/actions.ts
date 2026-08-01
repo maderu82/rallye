@@ -427,6 +427,8 @@ export async function updateLeg(
     speed_limit: number | null;
     photo_radius: number | null;
     photo_buy_cost: number | null;
+    route_points: number | null;
+    route_corridor: number | null;
   }>,
 ) {
   const db = await createClient();

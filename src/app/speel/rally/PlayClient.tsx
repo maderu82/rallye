@@ -1,14 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import dynamic from "next/dynamic";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
-import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, scoreRoute, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
 import { NEXT_STEP_COST } from "@/lib/play/constants";
 import TulipGlyph from "@/components/TulipGlyph";
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
+
+const RouteLineMap = dynamic(() => import("@/components/RouteLineMap"), {
+  ssr: false,
+  loading: () => <div className="h-[320px] w-full animate-pulse rounded-card bg-paper" />,
+});
 
 // Pick a readable text color (dark or white) for a given brand background.
 function readableInk(hex: string): string {
@@ -77,6 +83,7 @@ const NAV_INTRO: Record<string, { icon: string; title: string; text: string }> =
   routebook: { icon: "📖", title: "Routeboek", text: "Volg de geschreven aanwijzingen op volgorde tot je op de bestemming bent." },
   cryptic: { icon: "🕵️", title: "Cryptische route", text: "Los het raadsel op en ga erheen. Pas als je op die plek bent, verschijnt de volgende aanwijzing." },
   photo_nav: { icon: "📷", title: "Foto-navigatie", text: "Zoek de plek van de foto. Ben je er, tik 'We zijn er!' — dan komt de volgende foto." },
+  line: { icon: "📐", title: "De harde lijn", text: "Ouderwets kaartlezen: volg de getekende lijn van start naar finish. De gps begeleidt niet, maar meet wél mee — achteraf zie je hoeveel van de route je volgde en hoeveel punten dat oplevert." },
   map: { icon: "🗺️", title: "Kaart", text: "Volg de route op de kaart naar het volgende punt." },
 };
 
@@ -559,6 +566,10 @@ function WaypointView(props: {
         />
       ) : null}
 
+      {leg?.nav_mode === "line" && (unlocked || !gated) ? (
+        <RouteScore leg={leg} target={point} onScored={onScored} toast={toast} />
+      ) : null}
+
       {point.note && (unlocked || !gated) ? (
         <div className="mb-3.5 rounded-card bg-teal-light p-3 text-sm text-teal-dark">
           📍 <b>{point.name}</b> — {point.note}
@@ -744,6 +755,8 @@ function LegNav({
       {/* Foto-navigatie: one photo at a time; geofence-confirm arrival to advance */}
       {leg.nav_mode === "photo_nav" ? <SequentialNav variant="photo" leg={leg} testMode={testMode} onScored={onScored} toast={toast} /> : null}
 
+      {leg.nav_mode === "line" ? <LineNav leg={leg} target={target} /> : null}
+
       {leg.nav_mode === "map" ? (
         <p className="text-sm leading-relaxed text-polder-grey">
           🗺️ {leg.note || "Volg de routelijn op de kaart naar het volgende punt."}
@@ -759,6 +772,116 @@ function LegNav({
           onAnswered={onEnrouteAnswered}
         />
       ) : null}
+    </div>
+  );
+}
+
+// ── de harde lijn: read-only map (start/end/line), GPS does NOT guide ────────
+function LineNav({ leg, target }: { leg: Leg; target: Point }) {
+  const route = (leg.turn_route ?? []) as [number, number][];
+  const start = route.length >= 1 ? { lat: route[0][0], lng: route[0][1] } : null;
+  const end =
+    target.lat != null && target.lng != null
+      ? { lat: target.lat, lng: target.lng }
+      : route.length >= 2
+        ? { lat: route[route.length - 1][0], lng: route[route.length - 1][1] }
+        : null;
+
+  return (
+    <div className="space-y-2">
+      <p className="rounded-soft bg-amber-50 p-2 text-[13px] font-medium text-amber-800">
+        🗺️ Ouderwets kaartlezen: volg de paarse lijn van <b>S</b> naar <b>F</b>. Je gps loopt hier <b>niet</b> mee — je moet zelf de kaart lezen. Achteraf kijken we met gps hoeveel van de route je gevolgd hebt.
+      </p>
+      {leg.note ? <p className="text-[13px] text-polder-grey">{leg.note}</p> : null}
+      {start || end ? (
+        <RouteLineMap start={start} end={end} route={route} />
+      ) : (
+        <p className="text-sm text-polder-grey">Er is nog geen lijn getekend voor dit traject.</p>
+      )}
+    </div>
+  );
+}
+
+// Compute + show the route-following score once the team reaches the endpoint,
+// with a feedback map comparing the route they had to drive against their trail.
+function RouteScore({
+  leg,
+  target,
+  onScored,
+  toast,
+}: {
+  leg: Leg;
+  target: Point;
+  onScored: (score: number) => void;
+  toast: (m: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{
+    coverage: number;
+    awarded: number;
+    maxPoints: number;
+    route: [number, number][];
+    trail: [number, number][];
+  } | null>(null);
+
+  async function run() {
+    setBusy(true);
+    const r = await scoreRoute(leg.id);
+    setBusy(false);
+    if (!r.ok) {
+      toast(r.error ?? "Kon de route niet scoren.");
+      return;
+    }
+    setResult({ coverage: r.coverage, awarded: r.awarded, maxPoints: r.maxPoints, route: r.route, trail: r.trail });
+    onScored(r.score);
+    if (!r.already) toast(`Route gevolgd: ${Math.round(r.coverage * 100)}% → +${r.awarded} punten`);
+  }
+
+  const route = result?.route ?? [];
+  const start = route.length >= 1 ? { lat: route[0][0], lng: route[0][1] } : null;
+  const end =
+    target.lat != null && target.lng != null
+      ? { lat: target.lat, lng: target.lng }
+      : route.length >= 2
+        ? { lat: route[route.length - 1][0], lng: route[route.length - 1][1] }
+        : null;
+
+  return (
+    <div className="card mb-3.5 border-l-4 border-teal">
+      <h3 className="mb-1 text-base font-bold text-teal-dark">📐 Route-score</h3>
+      {result ? (
+        <div className="space-y-2">
+          <div>
+            <div className="text-3xl font-extrabold text-teal-dark">{Math.round(result.coverage * 100)}%</div>
+            <p className="text-sm text-polder-grey">
+              gevolgd van de uitgezette lijn → <b>+{result.awarded}</b>
+              {result.maxPoints ? ` van ${result.maxPoints}` : ""} punten
+            </p>
+          </div>
+          {result.route.length >= 2 || result.trail.length >= 2 ? (
+            <>
+              <RouteLineMap start={start} end={end} route={result.route} trail={result.trail} height={260} />
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-polder-grey">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-1 w-5 rounded" style={{ background: "#534AB7" }} /> uitgezette route
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-1 w-5 rounded" style={{ background: "#D85A30" }} /> jullie spoor
+                </span>
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <p className="mb-2 text-[13px] text-polder-grey">
+            Je bent op de bestemming. Bekijk hoeveel van de uitgezette route je gevolgd hebt — dat bepaalt je punten.
+          </p>
+          <button className="btn btn-teal w-full" disabled={busy} onClick={run}>
+            {busy ? "Bezig…" : "Toon mijn route-score"}
+          </button>
+        </>
+      )}
     </div>
   );
 }

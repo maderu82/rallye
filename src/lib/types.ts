@@ -70,6 +70,8 @@ export interface Leg {
   speed_limit: number | null; // per-leg speed warning threshold (km/h); null = use rally default
   photo_radius: number | null; // foto-navigatie: arrival geofence in m; null = default 100
   photo_buy_cost: number | null; // foto-navigatie: cost to buy next photo; null = default 5
+  route_points: number | null; // de harde lijn: max points for following the drawn route
+  route_corridor: number | null; // de harde lijn: corridor width in m; null = default 40
   created_at: string;
 }
 

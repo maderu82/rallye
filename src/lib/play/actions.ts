@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { grade } from "@/lib/grading";
+import { haversine } from "@/lib/geo";
 import type { Assignment, Team } from "@/lib/types";
 import { TEAM_COOKIE, NEXT_STEP_COST } from "./constants";
 
@@ -444,6 +445,135 @@ export async function buyNextStep(legId: string): Promise<{ ok: boolean; score: 
   });
 
   return { ok: true, score: await scoreOf(db, team.id) };
+}
+
+// ── de harde lijn: score how well the team followed the drawn route ──────────
+// The organizer draws a route line; the GPS does NOT guide the team during play.
+// Afterwards we score coverage: what fraction of the drawn route the team's
+// breadcrumb trail passed within `route_corridor` metres of. Deviating from the
+// line lowers the covered fraction. Points = round(coverage × route_points).
+// Awarded once per leg.
+function projectXY(ref: { lat: number; lng: number }, p: { lat: number; lng: number }): [number, number] {
+  const R = 6371000;
+  const x = ((p.lng - ref.lng) * Math.PI) / 180 * R * Math.cos((ref.lat * Math.PI) / 180);
+  const y = ((p.lat - ref.lat) * Math.PI) / 180 * R;
+  return [x, y];
+}
+
+function distToSeg(p: [number, number], a: [number, number], b: [number, number]): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 0 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+function routeCoverage(route: [number, number][], trail: { lat: number; lng: number }[], corridor: number): number {
+  if (route.length < 2 || trail.length === 0) return 0;
+  const ref = { lat: route[0][0], lng: route[0][1] };
+  const trailXY = trail.map((t) => projectXY(ref, t));
+  const step = Math.max(10, corridor / 2);
+  let total = 0, covered = 0;
+  for (let i = 1; i < route.length; i++) {
+    const a = { lat: route[i - 1][0], lng: route[i - 1][1] };
+    const b = { lat: route[i][0], lng: route[i][1] };
+    const segLen = haversine(a, b);
+    const n = Math.max(1, Math.ceil(segLen / step));
+    const ax = projectXY(ref, a), bx = projectXY(ref, b);
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n;
+      const sx: [number, number] = [ax[0] + (bx[0] - ax[0]) * t, ax[1] + (bx[1] - ax[1]) * t];
+      total++;
+      let best = Infinity;
+      if (trailXY.length === 1) {
+        best = Math.hypot(sx[0] - trailXY[0][0], sx[1] - trailXY[0][1]);
+      } else {
+        for (let j = 1; j < trailXY.length; j++) {
+          const d = distToSeg(sx, trailXY[j - 1], trailXY[j]);
+          if (d < best) best = d;
+          if (best <= corridor) break;
+        }
+      }
+      if (best <= corridor) covered++;
+    }
+  }
+  return total > 0 ? covered / total : 0;
+}
+
+export async function scoreRoute(
+  legId: string,
+): Promise<{
+  ok: boolean;
+  coverage: number;
+  awarded: number;
+  maxPoints: number;
+  score: number;
+  already: boolean;
+  route: [number, number][];
+  trail: [number, number][];
+  error?: string;
+}> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, coverage: 0, awarded: 0, maxPoints: 0, score: 0, already: false, route: [], trail: [], error: "Geen actief team." };
+  const { team, db } = ctx;
+
+  const empty = { route: [] as [number, number][], trail: [] as [number, number][] };
+
+  const { data: leg } = await db
+    .from("legs")
+    .select("id,rally_id,turn_route,route_points,route_corridor")
+    .eq("id", legId)
+    .maybeSingle();
+  if (!leg || leg.rally_id !== team.rally_id) {
+    return { ok: false, coverage: 0, awarded: 0, maxPoints: 0, score: await scoreOf(db, team.id), already: false, ...empty, error: "Traject niet gevonden." };
+  }
+
+  const maxPts = leg.route_points != null && leg.route_points > 0 ? leg.route_points : 0;
+  const corridor = leg.route_corridor != null && leg.route_corridor > 0 ? leg.route_corridor : 40;
+  const route = (leg.turn_route ?? []) as [number, number][];
+
+  // The team's driven trail — always returned so the feedback map can show it.
+  const { data: pos } = await db
+    .from("team_positions")
+    .select("lat,lng")
+    .eq("team_id", team.id)
+    .order("created_at", { ascending: true });
+  const trailPts = (pos ?? []).map((p) => ({ lat: p.lat as number, lng: p.lng as number }));
+  const trail = trailPts.map((p) => [p.lat, p.lng] as [number, number]);
+
+  // award once — return the earlier result if already scored
+  const { data: prev } = await db
+    .from("team_events")
+    .select("id,points_delta,detail")
+    .eq("team_id", team.id)
+    .eq("kind", "assignment");
+  const done = (prev ?? []).find(
+    (e) => (e.detail as { route?: boolean; leg_id?: string } | null)?.route && (e.detail as { leg_id?: string }).leg_id === legId,
+  );
+  if (done) {
+    const cov = Number((done.detail as { coverage?: number }).coverage ?? 0);
+    return { ok: true, coverage: cov, awarded: done.points_delta, maxPoints: maxPts, score: await scoreOf(db, team.id), already: true, route, trail };
+  }
+
+  if (route.length < 2) {
+    return { ok: false, coverage: 0, awarded: 0, maxPoints: maxPts, score: await scoreOf(db, team.id), already: false, route, trail, error: "Deze route heeft geen lijn om te scoren." };
+  }
+
+  const coverage = routeCoverage(route, trailPts, corridor);
+  const awarded = Math.round(coverage * maxPts);
+
+  await db.from("team_events").insert({
+    team_id: team.id,
+    rally_id: team.rally_id,
+    assignment_id: null,
+    point_id: null,
+    kind: "assignment",
+    points_delta: awarded,
+    is_hint: false,
+    detail: { route: true, leg_id: legId, coverage, corridor, maxPoints: maxPts },
+  });
+
+  return { ok: true, coverage, awarded, maxPoints: maxPts, score: await scoreOf(db, team.id), already: false, route, trail };
 }
 
 // ── en-route question ─────────────────────────────────────────────────────────

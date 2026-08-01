@@ -664,6 +664,39 @@ function LegSettings({
         </div>
       ) : null}
 
+      {leg.nav_mode === "line" ? (
+        <>
+          <RoadbookEditor variant="line" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} />
+          <div className="grid grid-cols-2 gap-2 rounded-soft bg-paper p-3">
+            <div>
+              <label className="field-label">Punten voor volledige route</label>
+              <input
+                type="number"
+                min={0}
+                defaultValue={leg.route_points ?? 20}
+                className="input"
+                onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { route_points: v === "" ? null : Number(v) })); }}
+              />
+            </div>
+            <div>
+              <label className="field-label">Corridor-breedte (m)</label>
+              <input
+                type="number"
+                min={10}
+                defaultValue={leg.route_corridor ?? 40}
+                className="input"
+                onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { route_corridor: v === "" ? null : Number(v) })); }}
+              />
+            </div>
+            <p className="col-span-2 text-xs text-polder-grey">De gps <b>begeleidt niet</b> — het team leest zelf de kaart. Achteraf scoren we het percentage van de lijn dat hun spoor binnen de corridor volgde × dit puntenaantal. Een bredere corridor is soepeler; smaller straft afwijken zwaarder.</p>
+          </div>
+          <div>
+            <label className="field-label">Toelichting op de kaart (optioneel)</label>
+            <input defaultValue={leg.note ?? ""} className="input" placeholder="bijv. 'Volg de dijk, niet de snelweg'" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { note: e.target.value }))} />
+          </div>
+        </>
+      ) : null}
+
       {leg.nav_mode === "map" ? (
         <div>
           <label className="field-label">Toelichting (optioneel)</label>
@@ -722,7 +755,7 @@ function LegSettings({
 // Direction options offered in the per-point picker (arrive is automatic for the last point).
 const DIR_CHOICES = ROADBOOK_DIRS.filter((d) => d.id !== "arrive");
 
-type RbVariant = "turn" | "routebook" | "cryptic" | "photo_nav";
+type RbVariant = "turn" | "routebook" | "cryptic" | "photo_nav" | "line";
 
 // Per-variant presentation of the same map-based step composer.
 const RB_CONFIG: Record<RbVariant, {
@@ -763,6 +796,13 @@ const RB_CONFIG: Record<RbVariant, {
     showArrow: false, arrowPrimary: false, showPhoto: true, showDist: true, showRadius: true,
     notePlaceholder: "optionele hint bij de foto",
     empty: "Nog geen punten. Zet ze op de kaart — voor elk punt upload je een foto van het kruispunt.",
+  },
+  line: {
+    header: "De harde lijn — teken de route die het team met de kaart moet volgen",
+    listLabel: "Vormpunten van de lijn (alleen om de route te tekenen)",
+    showArrow: false, arrowPrimary: false, showPhoto: false, showDist: true, showRadius: false,
+    notePlaceholder: "optionele notitie (spelers zien dit niet)",
+    empty: "Nog geen vormpunten. Klik op de kaart om de te volgen lijn tussen start en finish te tekenen.",
   },
 };
 
@@ -895,7 +935,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
             onAddPoint={addPointAt}
             onMovePoint={movePointAt}
           />
-          <p className="text-xs text-polder-grey">De route loopt <b>langs de wegen</b> (paars); afstanden zijn echte weg-afstanden. Sleep een punt om het te verschuiven. Tip: <b>⛶ Groot bewerken</b> voor een groter scherm. Deze kaart zien alleen jij — spelers krijgen alleen het routeboek.</p>
+          <p className="text-xs text-polder-grey">De route loopt <b>langs de wegen</b> (paars); afstanden zijn echte weg-afstanden. Sleep een punt om het te verschuiven. Tip: <b>⛶ Groot bewerken</b> voor een groter scherm. {variant === "line" ? "Spelers zien deze lijn op de kaart (maar de gps begeleidt niet)." : "Deze kaart zien alleen jij — spelers krijgen alleen het routeboek."}</p>
         </>
       )}
 
@@ -1295,6 +1335,7 @@ function legSummary(l: Leg): string {
   if (l.nav_mode === "turn") return l.turn_steps?.length ? `roadbook — ${l.turn_steps.length} stap${l.turn_steps.length === 1 ? "" : "pen"}` : "roadbook nog invullen";
   if (l.nav_mode === "cryptic") return l.turn_steps?.length ? `cryptische route — ${l.turn_steps.length} raadsel${l.turn_steps.length === 1 ? "" : "s"}` : "cryptische route nog invullen";
   if (l.nav_mode === "photo_nav") return l.turn_steps?.length ? `foto-navigatie — ${l.turn_steps.length} foto${l.turn_steps.length === 1 ? "" : "'s"}` : "foto-navigatie nog invullen";
+  if (l.nav_mode === "line") return l.turn_route?.length ? `de harde lijn — kaartlezen (${l.route_points ?? 20} ptn)` : "de harde lijn — teken de route";
   if (l.nav_mode === "routebook" && l.turn_steps?.length) return `routeboek — ${l.turn_steps.length} aanwijzing${l.turn_steps.length === 1 ? "" : "en"}`;
   const first = (l.steps ?? "").split("\n").filter(Boolean);
   return first.length ? `${first.length} instructie${first.length === 1 ? "" : "s"} — "${first[0]}"` : "instructies nog invullen";

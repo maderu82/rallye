@@ -83,6 +83,8 @@ create table if not exists public.legs (
   speed_limit      int,
   photo_radius     int,
   photo_buy_cost   int,
+  route_points     int,
+  route_corridor   int,
   created_at       timestamptz not null default now(),
   unique (rally_id, position)
 );
@@ -94,6 +96,8 @@ alter table public.legs add column if not exists turn_route jsonb not null defau
 alter table public.legs add column if not exists speed_limit int;
 alter table public.legs add column if not exists photo_radius int;
 alter table public.legs add column if not exists photo_buy_cost int;
+alter table public.legs add column if not exists route_points int;
+alter table public.legs add column if not exists route_corridor int;
 
 -- ─── teams ───────────────────────────────────────────────────────────────────
 create table if not exists public.teams (
