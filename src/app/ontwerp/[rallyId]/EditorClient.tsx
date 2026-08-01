@@ -634,6 +634,34 @@ function LegSettings({
 
       {leg.nav_mode === "turn" ? <RoadbookEditor variant="turn" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
+      {leg.nav_mode === "turn" ? (
+        <div className="grid grid-cols-2 gap-2 rounded-soft bg-paper p-3">
+          <p className="col-span-2 text-sm font-bold text-teal-dark">🎯 Score voor het volgen van de route (optioneel)</p>
+          <div>
+            <label className="field-label">Punten bij volledig gevolgd</label>
+            <input
+              type="number"
+              min={0}
+              defaultValue={leg.route_points ?? ""}
+              className="input"
+              placeholder="leeg = geen route-score"
+              onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { route_points: v === "" ? null : Number(v) })); }}
+            />
+          </div>
+          <div>
+            <label className="field-label">Corridor-breedte (m)</label>
+            <input
+              type="number"
+              min={10}
+              defaultValue={leg.route_corridor ?? 40}
+              className="input"
+              onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { route_corridor: v === "" ? null : Number(v) })); }}
+            />
+          </div>
+          <p className="col-span-2 text-xs text-polder-grey">Naast de opdracht op de bestemming kun je punten geven voor hoe goed het team de uitgezette bolletje-pijltje-route volgde. Achteraf zien ze hun spoor naast de route, plus het percentage gevolgd × dit puntenaantal. Laat leeg om geen route-score te geven.</p>
+        </div>
+      ) : null}
+
       {leg.nav_mode === "cryptic" ? <RoadbookEditor variant="cryptic" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
       {leg.nav_mode === "photo_nav" ? <RoadbookEditor variant="photo_nav" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}

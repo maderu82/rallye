@@ -521,14 +521,17 @@ export async function scoreRoute(
 
   const { data: leg } = await db
     .from("legs")
-    .select("id,rally_id,turn_route,route_points,route_corridor")
+    .select("id,rally_id,nav_mode,turn_route,route_points,route_corridor")
     .eq("id", legId)
     .maybeSingle();
   if (!leg || leg.rally_id !== team.rally_id) {
     return { ok: false, coverage: 0, awarded: 0, maxPoints: 0, score: await scoreOf(db, team.id), already: false, ...empty, error: "Traject niet gevonden." };
   }
 
-  const maxPts = leg.route_points != null && leg.route_points > 0 ? leg.route_points : 0;
+  // route_points drives the score; for "de harde lijn" fall back to a sensible
+  // default so a never-touched line still awards points.
+  const maxPts =
+    leg.route_points != null && leg.route_points > 0 ? leg.route_points : leg.nav_mode === "line" ? 20 : 0;
   const corridor = leg.route_corridor != null && leg.route_corridor > 0 ? leg.route_corridor : 40;
   const route = (leg.turn_route ?? []) as [number, number][];
 
