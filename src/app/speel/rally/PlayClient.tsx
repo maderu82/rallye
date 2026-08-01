@@ -780,6 +780,10 @@ function LegNav({
           <TripOdometer />
           {(leg.turn_steps ?? []).length > 0 ? (
             <div className="space-y-1.5">
+              <div className="flex items-center gap-3 px-2 text-[10px] font-semibold uppercase tracking-wide text-polder-grey">
+                <span className="w-14 shrink-0 text-right leading-tight">km totaal<br /><span className="normal-case text-teal-dark">+ tussen</span></span>
+                <span>richting &amp; herkenningspunt</span>
+              </div>
               {(() => {
                 let cum = 0;
                 return leg.turn_steps.map((s, i) => {
@@ -789,9 +793,9 @@ function LegNav({
                   const d = ROADBOOK_BY_ID[s.dir] ?? ROADBOOK_BY_ID.straight;
                   return (
                     <div key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-center gap-3 rounded-soft border-2 border-polder-line bg-white p-2 ${checked.has(i) ? "opacity-60" : ""}`}>
-                      <div className="w-14 shrink-0 text-right">
+                      <div className="w-14 shrink-0 text-right" title="Boven: totale km vanaf begin traject · Onder: km sinds vorige regel (vergelijk met je ritmeter)">
                         <div className="font-mono text-[15px] font-bold tabular-nums text-ink">{(total / 1000).toFixed(1)}</div>
-                        <div className="font-mono text-[10px] text-polder-grey">+{s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)}` : `${(s.dist / 1000).toFixed(2)}`}</div>
+                        <div className="font-mono text-[10px] font-semibold tabular-nums text-teal-dark">+{s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)}` : `${(s.dist / 1000).toFixed(2)}`}</div>
                       </div>
                       <span className="shrink-0 rounded-soft bg-paper p-0.5"><RoadArrowGlyph dir={s.dir} roads={s.roads} take={s.take} /></span>
                       {s.picto ? <span className="shrink-0 text-teal-dark"><Picto id={s.picto} size={30} /></span> : null}
