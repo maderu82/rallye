@@ -22,6 +22,19 @@ export interface Junction {
   take: number; // screen angle of the road to take
 }
 
+/** Roadbook direction id from a tulip take-angle (0 = straight ahead, 90 = right). */
+export function dirFromTakeAngle(take: number): string {
+  const a = (((take % 360) + 360) % 360); // 0..360
+  const s = a > 180 ? a - 360 : a; // -180..180, 0 = straight ahead
+  const abs = Math.abs(s);
+  if (abs <= 20) return "straight";
+  if (abs >= 155) return "uturn";
+  const right = s > 0;
+  if (abs < 55) return right ? "slight_right" : "slight_left";
+  if (abs < 120) return right ? "right" : "left";
+  return right ? "sharp_right" : "sharp_left";
+}
+
 export async function fetchRoadRoute(
   waypoints: LL[],
 ): Promise<{ route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[] } | null> {
@@ -41,7 +54,8 @@ export async function fetchRoadRoute(
     const r = data.routes?.[0];
     if (!r) return null;
     const route = (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
-    type RawStep = { geometry?: { coordinates: [number, number][] }; intersections?: { bearings?: number[]; out?: number }[] };
+    type RawInter = { location?: [number, number]; bearings?: number[]; in?: number; out?: number };
+    type RawStep = { geometry?: { coordinates: [number, number][] }; intersections?: RawInter[] };
     const rawLegs = (r.legs ?? []) as { distance: number; steps?: RawStep[] }[];
     const legs = rawLegs.map((l) => Math.round(l.distance));
     const legGeoms: [number, number][][] = rawLegs.map((l) => {
@@ -51,20 +65,46 @@ export async function fetchRoadRoute(
       }
       return pts;
     });
-    // Junction (tulip) per vertex after the start: all roads at that node,
-    // rotated so the road you came from points down, with the taken road marked.
-    const junctions: (Junction | null)[] = legGeoms.map((_, i) => {
-      if (i === legGeoms.length - 1) return null; // arrive
-      const inter = rawLegs[i + 1]?.steps?.[0]?.intersections?.[0];
-      const inbound = bearingIntoEnd(legGeoms[i]);
-      if (!inter?.bearings?.length || inbound == null) return null;
-      const cameFrom = (inbound + 180) % 360;
-      const roads = inter.bearings.map((b) => Math.round((b - cameFrom + 180 + 360) % 360));
-      const outIdx = typeof inter.out === "number" ? inter.out : -1;
-      const outB = bearingFromStart(legGeoms[i + 1]);
-      const take = outIdx >= 0 && outIdx < roads.length ? roads[outIdx] : outB != null ? Math.round((outB - cameFrom + 180 + 360) % 360) : 0;
-      return { roads, take };
-    });
+
+    // Collect EVERY intersection along the whole route with its real position,
+    // the roads that meet there, and which road the route enters/exits by. A
+    // clicked turn point rarely lands exactly on a junction node — OSRM snaps it
+    // mid-road — so instead of trusting the waypoint's own snap we look along the
+    // route for the actual junction nearest each turn point.
+    type Node = { lat: number; lng: number; bearings: number[]; in: number; out: number };
+    const nodes: Node[] = [];
+    for (const l of rawLegs) {
+      for (const s of l.steps ?? []) {
+        for (const it of s.intersections ?? []) {
+          if (!it.location || !it.bearings?.length) continue;
+          if (typeof it.in !== "number" || typeof it.out !== "number") continue;
+          nodes.push({ lat: it.location[1], lng: it.location[0], bearings: it.bearings, in: it.in, out: it.out });
+        }
+      }
+    }
+    // OSRM's snapped waypoint locations (used as the search anchor per turn point).
+    const snapped = ((data.waypoints ?? []) as { location?: [number, number] }[]).map((w) => w.location);
+
+    // One junction per turn point = waypoints 1..n-2 of the full [start,…,end] list.
+    const junctions: (Junction | null)[] = [];
+    for (let wi = 1; wi < waypoints.length - 1; wi++) {
+      const loc = snapped[wi];
+      const target: LL = loc ? { lat: loc[1], lng: loc[0] } : waypoints[wi];
+      // Nearest junction within 70 m, preferring real junctions (more roads).
+      let best: Node | null = null;
+      let bestScore = -Infinity;
+      for (const n of nodes) {
+        const d = haversine(target, { lat: n.lat, lng: n.lng });
+        if (d > 70) continue;
+        const score = n.bearings.length * 1000 - d; // more roads wins; then nearer
+        if (score > bestScore) { bestScore = score; best = n; }
+      }
+      if (!best || best.in < 0 || best.out < 0) { junctions.push(null); continue; }
+      // Rotate so the road we came in on points down (180°); mark the exit road.
+      const inB = best.bearings[best.in];
+      const rot = (b: number) => Math.round((((b - inB + 180) % 360) + 360) % 360);
+      junctions.push({ roads: best.bearings.map(rot), take: rot(best.bearings[best.out]) });
+    }
     return { route, legs, legGeoms, junctions };
   } catch {
     return null;

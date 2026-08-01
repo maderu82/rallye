@@ -21,7 +21,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { deriveRoadbook, fetchRoadRoute, roadbookDirsFromGeom } from "@/lib/geo";
+import { deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, roadbookDirsFromGeom } from "@/lib/geo";
 import {
   addLeg,
   addPoint,
@@ -146,11 +146,13 @@ export default function EditorClient({
       const merged: RoadbookStep[] = auto.map((a, i) => {
         if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveNote };
         const pd = existing[i];
-        const suggested = smartDirs?.[i] ?? a.dir;
         const jn = road.junctions?.[i];
+        // Recompute is authoritative: re-derive the direction from the actual
+        // junction the route takes, so the label matches the highlighted road.
+        const dir = jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
         return {
           dist: a.dist,
-          dir: pd?.dir ?? suggested,
+          dir,
           note: pd?.note ?? "",
           ...(pd?.photo ? { photo: pd.photo } : {}),
           ...(pd?.radius != null ? { radius: pd.radius } : {}),
@@ -982,8 +984,10 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     const merged: RoadbookStep[] = auto.map((a, i) => {
       if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveStep?.note ?? "" };
       const pd = perPoint[i];
-      const suggested = smartDirs?.[i] ?? a.dir;
       const jn = road?.junctions?.[i];
+      // Newly placed points get the junction-accurate direction; a direction you
+      // already chose is preserved (drag/add never overwrites your choice).
+      const suggested = jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
       return {
         dist: a.dist,
         dir: pd?.dir ?? suggested,
