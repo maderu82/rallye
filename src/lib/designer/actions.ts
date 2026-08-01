@@ -142,7 +142,25 @@ export async function clearTeams(rallyId: string) {
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+/** Soft-delete: move a rally to the trash (recoverable). */
 export async function deleteRally(rallyId: string) {
+  await requireOwner(rallyId);
+  const admin = createAdminClient();
+  await admin.from("rallies").update({ deleted_at: new Date().toISOString() }).eq("id", rallyId);
+  revalidatePath("/ontwerp");
+  redirect("/ontwerp");
+}
+
+/** Restore a rally from the trash. */
+export async function restoreRally(rallyId: string) {
+  await requireOwner(rallyId);
+  const admin = createAdminClient();
+  await admin.from("rallies").update({ deleted_at: null }).eq("id", rallyId);
+  revalidatePath("/ontwerp");
+}
+
+/** Permanently delete a rally and everything under it — cannot be undone. */
+export async function hardDeleteRally(rallyId: string) {
   await requireOwner(rallyId);
   const admin = createAdminClient();
   // Delete this rally's teams first — that cascades their events, badges,
@@ -151,7 +169,7 @@ export async function deleteRally(rallyId: string) {
   // remain even if a cascade foreign key is missing in an older database.
   await admin.from("teams").delete().eq("rally_id", rallyId);
   await admin.from("rallies").delete().eq("id", rallyId);
-  redirect("/ontwerp");
+  revalidatePath("/ontwerp");
 }
 
 /** Start a test play session (organizer only) — opens the player app in test

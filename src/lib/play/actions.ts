@@ -57,10 +57,10 @@ export async function joinRally(formData: FormData) {
   // different case than the current normalization.
   const { data: rally } = await db
     .from("rallies")
-    .select("id,published")
+    .select("id,published,deleted_at")
     .ilike("join_code", joinCode)
     .maybeSingle();
-  if (!rally) return { error: `Onbekende teamcode "${joinCode}". Controleer de exacte code in de rally (Ontwerp → teamcode) en of de rally gepubliceerd is.` };
+  if (!rally || rally.deleted_at) return { error: `Onbekende teamcode "${joinCode}". Controleer de exacte code in de rally (Ontwerp → teamcode) en of de rally gepubliceerd is.` };
   if (!rally.published) return { error: "Deze rally is nog niet gepubliceerd. Vraag de organisator om te publiceren." };
 
   // Find-or-create the team by name within this rally: rejoining with the same

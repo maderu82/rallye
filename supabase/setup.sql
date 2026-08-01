@@ -17,12 +17,14 @@ create table if not exists public.rallies (
   speed_limit int,
   brand_color text,
   brand_logo  text,
+  deleted_at  timestamptz,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 alter table public.rallies add column if not exists speed_limit int;
 alter table public.rallies add column if not exists brand_color text;
 alter table public.rallies add column if not exists brand_logo text;
+alter table public.rallies add column if not exists deleted_at timestamptz;
 -- every rally code starts with RLY-; normalize any legacy codes that don't
 update public.rallies
 set join_code = 'RLY-' || regexp_replace(upper(replace(join_code, ' ', '')), '^RLY-?', '')

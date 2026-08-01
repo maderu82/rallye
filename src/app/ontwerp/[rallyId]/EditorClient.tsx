@@ -497,7 +497,7 @@ export default function EditorClient({
               <button
                 className="btn btn-danger w-full text-sm"
                 onClick={() => {
-                  if (confirm(`Weet je zeker dat je "${rally.name}" verwijdert?\n\nAlle teams en scores van deze rally verdwijnen definitief. Dit kan niet ongedaan worden gemaakt.`)) {
+                  if (confirm(`"${rally.name}" naar de prullenbak verplaatsen?\n\nDe rally wordt verborgen maar bewaard — je kunt 'm later herstellen of definitief verwijderen vanuit het ontwerpersportaal.`)) {
                     run(() => deleteRally(rally.id));
                   }
                 }}

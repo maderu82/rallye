@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createRally } from "@/lib/designer/actions";
 import { logout } from "@/lib/auth/actions";
 import DeleteRallyButton from "./DeleteRallyButton";
+import TrashRallyRow from "./TrashRallyRow";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +13,13 @@ export default async function DesignerHome() {
     data: { user },
   } = await db.auth.getUser();
 
-  const { data: rallies } = await db
+  const { data: allRallies } = await db
     .from("rallies")
-    .select("id,name,join_code,published,updated_at")
+    .select("id,name,join_code,published,updated_at,deleted_at")
     .order("updated_at", { ascending: false });
+
+  const rallies = (allRallies ?? []).filter((r) => !r.deleted_at);
+  const trashed = (allRallies ?? []).filter((r) => r.deleted_at);
 
   return (
     <main className="mx-auto max-w-[1000px] px-5 py-8">
@@ -31,7 +35,7 @@ export default async function DesignerHome() {
       <div className="grid gap-5 md:grid-cols-2">
         <section className="card">
           <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-teal-dark">Jouw rally&apos;s</h2>
-          {rallies?.length ? (
+          {rallies.length ? (
             <ul className="space-y-2">
               {rallies.map((r) => (
                 <li key={r.id} className="flex items-center gap-2 rounded-soft bg-paper p-3">
@@ -73,6 +77,20 @@ export default async function DesignerHome() {
           </p>
         </section>
       </div>
+
+      {trashed.length ? (
+        <section className="card mt-5">
+          <h2 className="mb-1 text-sm font-bold uppercase tracking-wide text-polder-grey">🗑️ Prullenbak</h2>
+          <p className="mb-3 text-xs text-polder-grey">
+            Verwijderde rally&apos;s blijven hier bewaard. Herstel ze, of verwijder ze definitief (met alle teams en scores).
+          </p>
+          <ul className="space-y-2">
+            {trashed.map((r) => (
+              <TrashRallyRow key={r.id} rallyId={r.id} rallyName={r.name} deletedAt={r.deleted_at} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </main>
   );
 }

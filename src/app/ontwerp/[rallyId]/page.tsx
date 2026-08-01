@@ -163,7 +163,7 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
   try {
     const probes = await Promise.all([
       admin.from("legs").select("photo_radius,photo_buy_cost,speed_limit,route_points,route_corridor").limit(1),
-      admin.from("rallies").select("speed_limit").limit(1),
+      admin.from("rallies").select("speed_limit,deleted_at").limit(1),
     ]);
     schemaBehind = probes.some((p) => p.error != null);
   } catch {

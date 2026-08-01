@@ -2,14 +2,14 @@
 
 import { deleteRally } from "@/lib/designer/actions";
 
-// Delete a rally from the overview list, behind a confirmation so a whole rally
-// (with all its teams and scores) can't be wiped by an accidental tap.
+// Move a rally to the trash from the overview list, behind a confirmation. It's
+// recoverable — permanent deletion happens from the trash.
 export default function DeleteRallyButton({ rallyId, rallyName }: { rallyId: string; rallyName: string }) {
   return (
     <form
       action={deleteRally.bind(null, rallyId)}
       onSubmit={(e) => {
-        if (!confirm(`Weet je zeker dat je "${rallyName}" verwijdert?\n\nAlle teams en scores van deze rally verdwijnen definitief. Dit kan niet ongedaan worden gemaakt.`)) {
+        if (!confirm(`"${rallyName}" naar de prullenbak verplaatsen?\n\nDe rally wordt verborgen maar bewaard — je kunt 'm herstellen of later definitief verwijderen.`)) {
           e.preventDefault();
         }
       }}

@@ -11,6 +11,7 @@ export interface Rally {
   speed_limit: number | null; // rally-wide default speed warning threshold (km/h)
   brand_color: string | null; // accent color (hex) for the player app
   brand_logo: string | null; // logo URL shown in the player header
+  deleted_at: string | null; // soft-delete: in the trash when set
   created_at: string;
   updated_at: string;
 }
