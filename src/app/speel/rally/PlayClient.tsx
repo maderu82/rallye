@@ -226,6 +226,12 @@ export default function PlayClient({
     [state.points],
   );
   const finishPoint = state.points.find((p) => p.kind === "finish");
+  // The finish is a real navigable step too: the team must still drive the last
+  // leg to it (and arrive) before the rally is done — it isn't skipped.
+  const flowPoints = useMemo(
+    () => (finishPoint ? [...waypoints, finishPoint] : waypoints),
+    [waypoints, finishPoint],
+  );
   const assignmentByPoint = useMemo(() => {
     const m = new Map<string, PublicAssignment>();
     for (const a of state.assignments) m.set(a.point_id, a);
@@ -249,14 +255,15 @@ export default function PlayClient({
   const [completed, setCompleted] = useState<Set<string>>(initialCompleted);
   const [score, setScore] = useState(state.score);
   const [step, setStep] = useState(() => {
-    // test mode: the organizer can jump straight to a chosen waypoint
-    if (testMode && startStep != null) return Math.max(0, Math.min(startStep, waypoints.length));
-    // resume at the first not-yet-completed waypoint
-    const idx = waypoints.findIndex((w) => {
+    // test mode: the organizer can jump straight to a chosen step
+    if (testMode && startStep != null) return Math.max(0, Math.min(startStep, flowPoints.length));
+    // resume at the first not-yet-completed step (finish has no task, so the
+    // team lands there to navigate the last leg once all waypoints are done)
+    const idx = flowPoints.findIndex((w) => {
       const a = assignmentByPoint.get(w.id);
       return !a || !initialCompleted.has(a.id);
     });
-    return idx === -1 ? waypoints.length : idx;
+    return idx === -1 ? flowPoints.length : idx;
   });
   const [badges, setBadges] = useState(state.badges.map((b) => ({ name: b.name, icon: b.icon })));
   const [lbOpen, setLbOpen] = useState(false);
@@ -371,7 +378,7 @@ export default function PlayClient({
     }
   }
 
-  const atFinish = step >= waypoints.length;
+  const atFinish = step >= flowPoints.length;
 
   // Live leaderboard: realtime rows for other teams + the player's own running
   // score (kept optimistic locally so it reflects instantly after each action).
@@ -385,7 +392,9 @@ export default function PlayClient({
 
   const title = atFinish
     ? "Finish"
-    : `Waypoint ${step + 1} van ${waypoints.length}`;
+    : flowPoints[step]?.kind === "finish"
+      ? "Naar de finish"
+      : `Waypoint ${step + 1} van ${waypoints.length}`;
 
   // Branding: theme the primary button + progress with the rally color, and
   // pick a readable ink color (dark on a light brand, white on a dark one).
@@ -478,19 +487,26 @@ export default function PlayClient({
           />
         ) : (
           <WaypointView
-            key={waypoints[step].id}
-            point={waypoints[step]}
-            leg={legByPosition.get(waypoints[step].position - 1)}
-            assignment={assignmentByPoint.get(waypoints[step].id)}
+            key={flowPoints[step].id}
+            point={flowPoints[step]}
+            leg={legByPosition.get(flowPoints[step].position - 1)}
+            assignment={assignmentByPoint.get(flowPoints[step].id)}
             stepIndex={step}
-            total={waypoints.length}
+            total={flowPoints.length}
             completed={completed}
             testMode={testMode}
             onScored={onScored}
             toast={toast}
             onComplete={(aid) => aid && setCompleted((s) => new Set(s).add(aid))}
             onNext={() => setStep((s) => s + 1)}
-            isLast={step === waypoints.length - 1}
+            isLast={step === flowPoints.length - 1}
+            nextLabel={
+              flowPoints[step].kind === "finish"
+                ? "🏁 Rally afronden"
+                : flowPoints[step + 1]?.kind === "finish"
+                  ? "Naar de finish →"
+                  : "Volgende waypoint →"
+            }
             finishName={finishPoint?.name ?? "de finish"}
             answeredEnroute={answeredEnroute}
             onEnrouteAnswered={(legId) => setAnsweredEnroute((s) => new Set(s).add(legId))}
@@ -540,11 +556,12 @@ function WaypointView(props: {
   onComplete: (assignmentId?: string) => void;
   onNext: () => void;
   isLast: boolean;
+  nextLabel: string;
   finishName: string;
   answeredEnroute: Set<string>;
   onEnrouteAnswered: (legId: string) => void;
 }) {
-  const { point, leg, assignment, stepIndex, total, completed, testMode, onScored, toast, onComplete, onNext, isLast, answeredEnroute, onEnrouteAnswered } = props;
+  const { point, leg, assignment, stepIndex, total, completed, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
   // A speed test must be started at the beginning of the leg, so it isn't
   // arrival-gated like the other assignments.
   const gated = point.gps_unlock && assignment?.type !== "speed_test";
@@ -618,7 +635,7 @@ function WaypointView(props: {
 
       {done ? (
         <button className="btn btn-coral mt-1.5 w-full" onClick={onNext}>
-          {isLast ? "Naar de finish →" : "Volgende waypoint →"}
+          {nextLabel}
         </button>
       ) : null}
     </div>
