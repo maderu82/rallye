@@ -143,9 +143,14 @@ export async function clearTeams(rallyId: string) {
 }
 
 export async function deleteRally(rallyId: string) {
-  const db = await createClient();
-  await requireUser(db);
-  await db.from("rallies").delete().eq("id", rallyId);
+  await requireOwner(rallyId);
+  const admin = createAdminClient();
+  // Delete this rally's teams first — that cascades their events, badges,
+  // positions and scores — then the rally itself, which cascades its points,
+  // legs and assignments. Explicit team deletion guarantees no orphaned scores
+  // remain even if a cascade foreign key is missing in an older database.
+  await admin.from("teams").delete().eq("rally_id", rallyId);
+  await admin.from("rallies").delete().eq("id", rallyId);
   redirect("/ontwerp");
 }
 

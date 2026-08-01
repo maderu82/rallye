@@ -23,6 +23,11 @@ create table if not exists public.rallies (
 alter table public.rallies add column if not exists speed_limit int;
 alter table public.rallies add column if not exists brand_color text;
 alter table public.rallies add column if not exists brand_logo text;
+-- every rally code starts with RLY-; normalize any legacy codes that don't
+update public.rallies
+set join_code = 'RLY-' || regexp_replace(upper(replace(join_code, ' ', '')), '^RLY-?', '')
+where join_code is not null
+  and join_code !~ '^RLY-.';
 
 -- ─── points ─────────────────────────────────────────────────────────────────
 create table if not exists public.points (
