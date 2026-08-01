@@ -742,7 +742,7 @@ function LegSettings({
         </>
       ) : null}
 
-      {leg.nav_mode === "turn" ? (
+      {leg.nav_mode === "turn" || leg.nav_mode === "dakar" ? (
         <div className="grid grid-cols-2 gap-2 rounded-soft bg-paper p-3">
           <p className="col-span-2 text-sm font-bold text-teal-dark">🎯 Score voor het volgen van de route (optioneel)</p>
           <div>
@@ -766,7 +766,7 @@ function LegSettings({
               onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { route_corridor: v === "" ? null : Number(v) })); }}
             />
           </div>
-          <p className="col-span-2 text-xs text-polder-grey">Naast de opdracht op de bestemming kun je punten geven voor hoe goed het team de uitgezette bolletje-pijltje-route volgde. Achteraf zien ze hun spoor naast de route, plus het percentage gevolgd × dit puntenaantal. Laat leeg om geen route-score te geven.</p>
+          <p className="col-span-2 text-xs text-polder-grey">Naast de opdracht op de bestemming kun je punten geven voor hoe goed het team de uitgezette route volgde. Achteraf zien ze hun spoor naast de route, plus het percentage gevolgd × dit puntenaantal. Laat leeg om geen route-score te geven.</p>
         </div>
       ) : null}
 

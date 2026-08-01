@@ -574,7 +574,7 @@ function WaypointView(props: {
         />
       ) : null}
 
-      {leg && (leg.nav_mode === "line" || (leg.nav_mode === "turn" && (leg.route_points ?? 0) > 0)) ? (
+      {leg && (leg.nav_mode === "line" || ((leg.nav_mode === "turn" || leg.nav_mode === "dakar") && (leg.route_points ?? 0) > 0)) ? (
         <RouteScore leg={leg} target={point} testMode={testMode} onScored={onScored} toast={toast} />
       ) : null}
 
