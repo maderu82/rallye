@@ -59,7 +59,7 @@ export const GRADING_LABEL: Record<Grading, string> = {
 };
 
 // ── Navigation modes per leg (§3.5A) ────────────────────────────────────────
-export type NavMode = "compass" | "routebook" | "turn" | "map" | "cryptic" | "photo_nav" | "line";
+export type NavMode = "compass" | "routebook" | "turn" | "map" | "cryptic" | "photo_nav" | "line" | "dakar";
 
 export interface NavDef {
   mode: NavMode;
@@ -74,6 +74,7 @@ export const NAV_MODES: NavDef[] = [
   { mode: "cryptic", label: "Cryptische route (herkenningspunten)", icon: "🕵️" },
   { mode: "photo_nav", label: "Foto-navigatie (kruispuntfoto's)", icon: "📷" },
   { mode: "line", label: "De harde lijn — kaartlezen (gps volgt niet mee)", icon: "📐" },
+  { mode: "dakar", label: "Roadbook (Dakar-stijl — dikke pijl + herkenningspunt)", icon: "🧭" },
   { mode: "map", label: "Kaart met waypoints", icon: "🗺️" },
 ];
 
@@ -102,6 +103,30 @@ export const ROADBOOK_DIRS: RoadbookDir[] = [
 export const ROADBOOK_BY_ID: Record<string, RoadbookDir> = Object.fromEntries(
   ROADBOOK_DIRS.map((d) => [d.id, d]),
 );
+
+// ── roadbook (Dakar) landmark pictograms ─────────────────────────────────────
+export interface Picto {
+  id: string;
+  label: string;
+}
+export const PICTOS: Picto[] = [
+  { id: "molen", label: "Molen" },
+  { id: "brug", label: "Brug" },
+  { id: "kerk", label: "Kerk" },
+  { id: "rotonde", label: "Rotonde" },
+  { id: "water", label: "Water / vaart" },
+  { id: "boom", label: "Boom" },
+  { id: "boerderij", label: "Boerderij" },
+  { id: "watertoren", label: "Watertoren" },
+];
+export const PICTO_BY_ID: Record<string, Picto> = Object.fromEntries(PICTOS.map((p) => [p.id, p]));
+
+// roadbook (Dakar) danger levels
+export const DANGER_LABEL: Record<number, string> = {
+  0: "geen",
+  1: "! let op",
+  2: "!! gevaar",
+};
 
 export type HintMode = "off" | "free" | "cost";
 export const HINT_LABEL: Record<HintMode, string> = {

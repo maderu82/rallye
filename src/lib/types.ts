@@ -83,6 +83,8 @@ export interface RoadbookStep {
   radius?: number; // per-step arrival geofence in m (foto/cryptische route); null = leg default
   roads?: number[]; // tulip: screen angles of all roads at this junction
   take?: number; // tulip: screen angle of the road to take
+  picto?: string; // roadbook (Dakar): landmark pictogram id at this point
+  danger?: number; // roadbook (Dakar): warning level 0=none, 1=let op, 2=gevaar
 }
 
 export interface Team {

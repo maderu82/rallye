@@ -9,6 +9,8 @@ import { createClient } from "@/lib/supabase/client";
 import type { MapPoint, MapTeam } from "@/components/RallyMap";
 import AssignmentConfig from "./AssignmentConfig";
 import TulipGlyph from "@/components/TulipGlyph";
+import RoadArrowGlyph from "@/components/RoadArrowGlyph";
+import Picto from "@/components/Picto";
 
 // Real map is client-only (Leaflet needs window).
 const RallyMap = dynamic(() => import("@/components/RallyMap"), {
@@ -19,7 +21,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
   ssr: false,
   loading: () => <div className="flex h-[340px] items-center justify-center rounded-xl bg-teal-light text-sm text-teal-dark">Kaart laden…</div>,
 });
-import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS } from "@/lib/blocks";
+import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
 import { deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, roadbookDirsFromGeom } from "@/lib/geo";
 import {
@@ -131,7 +133,7 @@ export default function EditorClient({
       const from = points[k];
       const to = points[k + 1];
       const tps = Array.isArray(leg.turn_points) ? leg.turn_points : [];
-      const wantsSchema = ["turn", "routebook", "cryptic", "photo_nav", "line"].includes(leg.nav_mode);
+      const wantsSchema = ["turn", "routebook", "cryptic", "photo_nav", "line", "dakar"].includes(leg.nav_mode);
       if (!wantsSchema || tps.length === 0 || from?.lat == null || from?.lng == null || to?.lat == null || to?.lng == null) {
         skipped++;
         continue;
@@ -156,6 +158,8 @@ export default function EditorClient({
           note: pd?.note ?? "",
           ...(pd?.photo ? { photo: pd.photo } : {}),
           ...(pd?.radius != null ? { radius: pd.radius } : {}),
+          ...(pd?.picto ? { picto: pd.picto } : {}),
+          ...(pd?.danger ? { danger: pd.danger } : {}),
           ...(jn ? { roads: jn.roads, take: jn.take } : {}),
         };
       });
@@ -729,6 +733,15 @@ function LegSettings({
 
       {leg.nav_mode === "turn" ? <RoadbookEditor variant="turn" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
+      {leg.nav_mode === "dakar" ? (
+        <>
+          <div className="rounded-soft bg-teal-light p-3 text-[13px] text-teal-dark">
+            🧭 Roadbook-stijl: spelers rijden op hun <b>ritmeter</b> (gereden km) en zetten die zelf op 0 bij een herkenbaar punt. Ze krijgen een <b>piep</b> bij aankomst op een navigatiepunt. Per regel: dikke pijl (uit de route), een herkenningspunt en eventueel een let-op.
+          </div>
+          <RoadbookEditor variant="dakar" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} />
+        </>
+      ) : null}
+
       {leg.nav_mode === "turn" ? (
         <div className="grid grid-cols-2 gap-2 rounded-soft bg-paper p-3">
           <p className="col-span-2 text-sm font-bold text-teal-dark">🎯 Score voor het volgen van de route (optioneel)</p>
@@ -878,7 +891,7 @@ function LegSettings({
 // Direction options offered in the per-point picker (arrive is automatic for the last point).
 const DIR_CHOICES = ROADBOOK_DIRS.filter((d) => d.id !== "arrive");
 
-type RbVariant = "turn" | "routebook" | "cryptic" | "photo_nav" | "line";
+type RbVariant = "turn" | "routebook" | "cryptic" | "photo_nav" | "line" | "dakar";
 
 // Per-variant presentation of the same map-based step composer.
 const RB_CONFIG: Record<RbVariant, {
@@ -927,6 +940,13 @@ const RB_CONFIG: Record<RbVariant, {
     notePlaceholder: "optionele notitie (spelers zien dit niet)",
     empty: "Nog geen vormpunten. Klik op de kaart om de te volgen lijn tussen start en finish te tekenen.",
   },
+  dakar: {
+    header: "Roadbook — klik de afslagpunten op de kaart; per regel een dikke pijl + herkenningspunt",
+    listLabel: "Roadbook-regels (in volgorde)",
+    showArrow: true, arrowPrimary: true, showPhoto: false, showDist: true, showRadius: false,
+    notePlaceholder: "notitie, bijv. 'molen aan je linkerhand'",
+    empty: "Nog geen afslagpunten. Zet ze op de kaart — per punt kies je richting, herkenningspunt en eventueel een let-op.",
+  },
 };
 
 // Downscale an organizer photo before upload to keep route-photos small.
@@ -971,7 +991,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   // PRESERVING each point's chosen direction/note (only new points get a
   // suggested direction). This is the key: dragging or adding a point never
   // overwrites directions you already set.
-  async function reroute(nextPoints: { lat: number; lng: number }[], perPoint: { dir?: string; note?: string; photo?: string }[]) {
+  async function reroute(nextPoints: { lat: number; lng: number }[], perPoint: { dir?: string; note?: string; photo?: string; picto?: string; danger?: number }[]) {
     const p = [start, ...nextPoints, end].filter(Boolean) as { lat: number; lng: number }[];
     setRouting(true);
     const road = await fetchRoadRoute(p);
@@ -993,6 +1013,8 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         dir: pd?.dir ?? suggested,
         note: pd?.note ?? "",
         ...(pd?.photo ? { photo: pd.photo } : {}),
+        ...(pd?.picto ? { picto: pd.picto } : {}),
+        ...(pd?.danger ? { danger: pd.danger } : {}),
         ...(jn ? { roads: jn.roads, take: jn.take } : {}),
       };
     });
@@ -1000,7 +1022,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   }
 
   // per-point dir/note/photo snapshot from the current steps, for preservation.
-  const curPerPoint = () => turnPoints.map((_, i) => ({ dir: pointSteps[i]?.dir, note: pointSteps[i]?.note, photo: pointSteps[i]?.photo }));
+  const curPerPoint = () => turnPoints.map((_, i) => ({ dir: pointSteps[i]?.dir, note: pointSteps[i]?.note, photo: pointSteps[i]?.photo, picto: pointSteps[i]?.picto, danger: pointSteps[i]?.danger }));
 
   // Legacy legs (drawn before the junction/tulip schema existed) have steps
   // without roads/take, so the schema falls back to a single arrow. Recompute
@@ -1171,7 +1193,9 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-bold text-white">{i + 1}</span>
                   {vc.showArrow ? (
                     <span className="flex shrink-0 items-center gap-1 rounded-soft border-2 border-[#534AB7]/30 bg-white px-1" title="Zo ziet de speler dit schema">
-                      <TulipGlyph dir={s?.dir ?? "straight"} roads={s?.roads} take={s?.take} size={44} />
+                      {variant === "dakar"
+                        ? <RoadArrowGlyph dir={s?.dir ?? "straight"} roads={s?.roads} take={s?.take} size={44} />
+                        : <TulipGlyph dir={s?.dir ?? "straight"} roads={s?.roads} take={s?.take} size={44} />}
                       <span className="pr-1 text-[9px] font-bold uppercase text-polder-grey">schema</span>
                     </span>
                   ) : null}
@@ -1198,7 +1222,44 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                 </div>
                 {warn ? <p className="mb-1.5 text-[11px] font-semibold text-coral">{warn}</p> : null}
                 {photoBlock}
-                {vc.arrowPrimary ? (
+                {variant === "dakar" ? (
+                  <>
+                    {dirPicker}
+                    <div className="mt-1.5">{noteInput}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                      <span className="mr-1 text-[11px] font-semibold text-polder-grey">Herkenningspunt:</span>
+                      {PICTOS.map((pc) => {
+                        const active = s?.picto === pc.id;
+                        return (
+                          <button
+                            key={pc.id}
+                            title={pc.label}
+                            onClick={() => setStep(i, { picto: active ? undefined : pc.id })}
+                            className={`flex h-8 w-8 items-center justify-center rounded-soft border-2 ${active ? "border-teal bg-teal-light text-teal-dark" : "border-polder-line text-polder-grey"}`}
+                          >
+                            <Picto id={pc.id} size={20} />
+                          </button>
+                        );
+                      })}
+                      {s?.picto ? <button className="text-[11px] text-polder-grey underline" onClick={() => setStep(i, { picto: undefined })}>geen</button> : null}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                      <span className="mr-1 text-[11px] font-semibold text-polder-grey">Let op:</span>
+                      {[0, 1, 2].map((lvl) => {
+                        const active = (s?.danger ?? 0) === lvl;
+                        return (
+                          <button
+                            key={lvl}
+                            onClick={() => setStep(i, { danger: lvl === 0 ? undefined : lvl })}
+                            className={`rounded-soft border-2 px-2 py-1 text-xs ${active ? (lvl === 0 ? "border-polder-line font-bold" : "border-[#D85A30] bg-coral-light font-bold text-coral") : "border-polder-line text-polder-grey"}`}
+                          >
+                            {DANGER_LABEL[lvl]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : vc.arrowPrimary ? (
                   <>
                     {dirPicker}
                     <div className="mt-1.5">{noteInput}</div>
@@ -1497,6 +1558,7 @@ function legSummary(l: Leg): string {
   if (l.nav_mode === "cryptic") return l.turn_steps?.length ? `cryptische route — ${l.turn_steps.length} raadsel${l.turn_steps.length === 1 ? "" : "s"}` : "cryptische route nog invullen";
   if (l.nav_mode === "photo_nav") return l.turn_steps?.length ? `foto-navigatie — ${l.turn_steps.length} foto${l.turn_steps.length === 1 ? "" : "'s"}` : "foto-navigatie nog invullen";
   if (l.nav_mode === "line") return l.turn_route?.length ? `de harde lijn — kaartlezen (${l.route_points ?? 20} ptn)` : "de harde lijn — teken de route";
+  if (l.nav_mode === "dakar") return l.turn_steps?.length ? `roadbook — ${l.turn_steps.length} regel${l.turn_steps.length === 1 ? "" : "s"}` : "roadbook nog invullen";
   if (l.nav_mode === "routebook" && l.turn_steps?.length) return `routeboek — ${l.turn_steps.length} aanwijzing${l.turn_steps.length === 1 ? "" : "en"}`;
   const first = (l.steps ?? "").split("\n").filter(Boolean);
   return first.length ? `${first.length} instructie${first.length === 1 ? "" : "s"} — "${first[0]}"` : "instructies nog invullen";

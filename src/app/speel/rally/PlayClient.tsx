@@ -4,10 +4,12 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import dynamic from "next/dynamic";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
-import { BLOCK_BY_TYPE, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
+import { BLOCK_BY_TYPE, DANGER_LABEL, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
 import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, scoreRoute, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
 import { NEXT_STEP_COST } from "@/lib/play/constants";
 import TulipGlyph from "@/components/TulipGlyph";
+import RoadArrowGlyph from "@/components/RoadArrowGlyph";
+import Picto from "@/components/Picto";
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
 
@@ -89,6 +91,7 @@ const NAV_INTRO: Record<string, { icon: string; title: string; text: string }> =
   cryptic: { icon: "🕵️", title: "Cryptische route", text: "Los het raadsel op en ga erheen. Pas als je op die plek bent, verschijnt de volgende aanwijzing." },
   photo_nav: { icon: "📷", title: "Foto-navigatie", text: "Zoek de plek van de foto. Ben je er, tik 'We zijn er!' — dan komt de volgende foto." },
   line: { icon: "📐", title: "De harde lijn", text: "Ouderwets kaartlezen: volg de getekende lijn van start naar finish. De gps begeleidt niet, maar meet wél mee — achteraf zie je hoeveel van de route je volgde en hoeveel punten dat oplevert." },
+  dakar: { icon: "🧭", title: "Roadbook", text: "Rijd op je ritmeter (gereden km). Elke regel: 'over zoveel km, dikke pijl, herkenningspunt'. Raak je uit sync? Zet de ritmeter op een herkenbaar punt op 0 met de reset-knop. Je krijgt een piep zodra je een punt bereikt." },
   map: { icon: "🗺️", title: "Kaart", text: "Volg de route op de kaart naar het volgende punt." },
 };
 
@@ -549,7 +552,7 @@ function WaypointView(props: {
   const done = assignment ? completed.has(assignment.id) : true;
   // Puzzle navigation modes hide the destination: the point name + note would
   // otherwise reveal where to go, so keep them hidden until the team arrives.
-  const hideDest = leg != null && ["turn", "routebook", "cryptic", "photo_nav"].includes(leg.nav_mode);
+  const hideDest = leg != null && ["turn", "routebook", "cryptic", "photo_nav", "dakar"].includes(leg.nav_mode);
 
   return (
     <div>
@@ -689,7 +692,7 @@ function LegNav({
         {nav.icon} {nav.label.split(" (")[0]}
       </h3>
 
-      {["turn", "routebook"].includes(leg.nav_mode) && (leg.turn_steps ?? []).length > 0 ? (
+      {["turn", "routebook", "dakar"].includes(leg.nav_mode) && (leg.turn_steps ?? []).length > 0 ? (
         <p className="mb-2 text-[11px] text-polder-grey">Tik een stap aan om &apos;m af te vinken zodra je &apos;m gepasseerd bent.</p>
       ) : null}
 
@@ -752,6 +755,43 @@ function LegNav({
             ))}
           </ol>
         )
+      ) : null}
+
+      {/* Roadbook (Dakar): trip odometer + a list of bold-arrow cases with pictos */}
+      {leg.nav_mode === "dakar" ? (
+        <div className="space-y-2">
+          <TripOdometer />
+          {(leg.turn_steps ?? []).length > 0 ? (
+            <div className="space-y-1.5">
+              {(() => {
+                let cum = 0;
+                return leg.turn_steps.map((s, i) => {
+                  cum += s.dist || 0;
+                  const total = cum;
+                  const last = i === leg.turn_steps.length - 1;
+                  const d = ROADBOOK_BY_ID[s.dir] ?? ROADBOOK_BY_ID.straight;
+                  return (
+                    <div key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-center gap-3 rounded-soft border-2 border-polder-line bg-white p-2 ${checked.has(i) ? "opacity-60" : ""}`}>
+                      <div className="w-14 shrink-0 text-right">
+                        <div className="font-mono text-[15px] font-bold tabular-nums text-ink">{(total / 1000).toFixed(1)}</div>
+                        <div className="font-mono text-[10px] text-polder-grey">+{s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)}` : `${(s.dist / 1000).toFixed(2)}`}</div>
+                      </div>
+                      <span className="shrink-0 rounded-soft bg-paper p-0.5"><RoadArrowGlyph dir={s.dir} roads={s.roads} take={s.take} /></span>
+                      {s.picto ? <span className="shrink-0 text-teal-dark"><Picto id={s.picto} size={30} /></span> : null}
+                      <div className="min-w-0 flex-1">
+                        <div className={`font-bold text-teal-dark ${checked.has(i) ? "line-through" : ""}`}>{s.note || (last ? "Aankomst" : d.label)}</div>
+                        {s.danger ? <span className="mt-0.5 inline-block rounded bg-coral-light px-1.5 py-0.5 text-[11px] font-bold text-coral">{DANGER_LABEL[s.danger]}</span> : null}
+                      </div>
+                      {checkDot(i)}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          ) : (
+            <p className="text-sm text-polder-grey">Dit roadbook is nog niet ingevuld.</p>
+          )}
+        </div>
       ) : null}
 
       {/* Cryptische route: one clue at a time; must reach the spot to reveal the next */}
@@ -919,6 +959,45 @@ function RouteScore({
           🔒 Je route-score verschijnt zodra je écht op de bestemming bent{dist != null ? ` (nog ${dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`})` : ""}. Volg eerst de route helemaal af.
         </p>
       )}
+    </div>
+  );
+}
+
+// ── roadbook (Dakar): live trip odometer the team drives on + manual reset ───
+function TripOdometer() {
+  const [km, setKm] = useState(0);
+  const last = useRef<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        const cur = { lat: p.coords.latitude, lng: p.coords.longitude };
+        const acc = p.coords.accuracy || 0;
+        // Only count movement on a decent fix; ignore jitter (<6 m) and GPS
+        // teleports (>300 m between fixes).
+        if (acc > 0 && acc <= 45 && last.current) {
+          const d = haversine(last.current, cur);
+          if (d > 6 && d < 300) setKm((k) => k + d / 1000);
+        }
+        last.current = cur;
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
+  return (
+    <div className="mb-2 flex items-center gap-3 rounded-card border-2 border-teal bg-white p-2.5">
+      <div className="flex items-baseline gap-1">
+        <span className="font-mono text-3xl font-bold tabular-nums text-teal-dark">{km.toFixed(1)}</span>
+        <span className="text-xs text-polder-grey">km<span className="block text-[9px] font-bold uppercase tracking-wide">ritmeter</span></span>
+      </div>
+      <button
+        className="ml-auto rounded-soft border-2 border-teal bg-teal-light px-3 py-2 text-[13px] font-bold text-teal-dark"
+        onClick={() => { setKm(0); ensureAudio(); }}
+      >
+        ⟲ Reset op punt
+      </button>
     </div>
   );
 }
