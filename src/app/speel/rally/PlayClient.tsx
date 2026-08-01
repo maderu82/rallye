@@ -566,8 +566,8 @@ function WaypointView(props: {
         />
       ) : null}
 
-      {leg && (leg.nav_mode === "line" || (leg.nav_mode === "turn" && (leg.route_points ?? 0) > 0)) && (unlocked || !gated) ? (
-        <RouteScore leg={leg} target={point} onScored={onScored} toast={toast} />
+      {leg && (leg.nav_mode === "line" || (leg.nav_mode === "turn" && (leg.route_points ?? 0) > 0)) ? (
+        <RouteScore leg={leg} target={point} testMode={testMode} onScored={onScored} toast={toast} />
       ) : null}
 
       {point.note && (unlocked || !gated) ? (
@@ -807,11 +807,13 @@ function LineNav({ leg, target }: { leg: Leg; target: Point }) {
 function RouteScore({
   leg,
   target,
+  testMode,
   onScored,
   toast,
 }: {
   leg: Leg;
   target: Point;
+  testMode: boolean;
   onScored: (score: number) => void;
   toast: (m: string) => void;
 }) {
@@ -823,6 +825,32 @@ function RouteScore({
     route: [number, number][];
     trail: [number, number][];
   } | null>(null);
+  // Strict GPS gate: scoring is only possible once the team is actually within
+  // the destination radius (a real gps fix — the manual "we're here" override
+  // does NOT unlock it), so a team can't lock in a low score before finishing.
+  const noCoords = target.lat == null || target.lng == null;
+  const [arrived, setArrived] = useState(testMode || noCoords);
+  const [dist, setDist] = useState<number | null>(null);
+  const radius = target.unlock_radius || 50;
+
+  useEffect(() => {
+    if (arrived || noCoords || !("geolocation" in navigator)) return;
+    const t = { lat: target.lat as number, lng: target.lng as number };
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const d = haversine({ lat: pos.coords.latitude, lng: pos.coords.longitude }, t);
+        setDist(Math.round(d));
+        if (d <= Math.max(radius, (pos.coords.accuracy || 0) * 0.6)) {
+          navigator.geolocation.clearWatch(id);
+          setArrived(true);
+        }
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrived, noCoords]);
 
   async function run() {
     setBusy(true);
@@ -872,7 +900,7 @@ function RouteScore({
             </>
           ) : null}
         </div>
-      ) : (
+      ) : arrived ? (
         <>
           <p className="mb-2 text-[13px] text-polder-grey">
             Je bent op de bestemming. Bekijk hoeveel van de uitgezette route je gevolgd hebt — dat bepaalt je punten.
@@ -881,6 +909,10 @@ function RouteScore({
             {busy ? "Bezig…" : "Toon mijn route-score"}
           </button>
         </>
+      ) : (
+        <p className="text-[13px] text-polder-grey">
+          🔒 Je route-score verschijnt zodra je écht op de bestemming bent{dist != null ? ` (nog ${dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`})` : ""}. Volg eerst de route helemaal af.
+        </p>
       )}
     </div>
   );
