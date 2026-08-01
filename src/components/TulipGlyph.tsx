@@ -7,8 +7,37 @@ const TULIP_ANGLE: Record<string, number> = {
   sharp_left: -135, sharp_right: 135, uturn: 165,
 };
 
-export default function TulipGlyph({ dir, size = 52 }: { dir: string; size?: number }) {
-  const purple = "#534AB7", ball = "#D85A30";
+export default function TulipGlyph({ dir, roads, take, size = 52 }: { dir: string; roads?: number[]; take?: number; size?: number }) {
+  const purple = "#534AB7", ball = "#D85A30", grey = "#B7B7C9";
+
+  // Real junction: draw every road (grey), highlight the one to take (purple).
+  if (roads && roads.length >= 2 && typeof take === "number") {
+    const cx = 30, cy = 30, len = 22;
+    const pt = (ang: number, l = len) => {
+      const a = (ang * Math.PI) / 180;
+      return [cx + l * Math.sin(a), cy - l * Math.cos(a)] as const;
+    };
+    const [tx, ty] = pt(take);
+    const w1 = (take + 180 - 26) * Math.PI / 180, w2 = (take + 180 + 26) * Math.PI / 180;
+    const wing = 8;
+    return (
+      <svg viewBox="0 0 60 60" width={size} height={size} aria-hidden>
+        {roads.map((ang, k) => {
+          const [ex, ey] = pt(ang);
+          const isTake = Math.abs(((ang - take + 540) % 360) - 180) < 6;
+          if (isTake) return null;
+          return <line key={k} x1={cx} y1={cy} x2={ex} y2={ey} stroke={grey} strokeWidth="3" strokeLinecap="round" />;
+        })}
+        <line x1={cx} y1={cy} x2={tx} y2={ty} stroke={purple} strokeWidth="4" strokeLinecap="round" />
+        <polyline
+          points={`${tx + wing * Math.sin(w1)},${ty - wing * Math.cos(w1)} ${tx},${ty} ${tx + wing * Math.sin(w2)},${ty - wing * Math.cos(w2)}`}
+          fill="none" stroke={purple} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"
+        />
+        <circle cx={cx} cy={cy} r="5" fill={ball} />
+      </svg>
+    );
+  }
+
   if (dir === "roundabout") {
     return (
       <svg viewBox="0 0 60 60" width={size} height={size} aria-hidden>

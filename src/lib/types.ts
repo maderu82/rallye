@@ -79,6 +79,8 @@ export interface RoadbookStep {
   note: string;
   photo?: string; // public URL of a junction photo (foto-navigatie)
   radius?: number; // per-step arrival geofence in m (foto/cryptische route); null = leg default
+  roads?: number[]; // tulip: screen angles of all roads at this junction
+  take?: number; // tulip: screen angle of the road to take
 }
 
 export interface Team {

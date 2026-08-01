@@ -716,7 +716,7 @@ function LegNav({
               const d = ROADBOOK_BY_ID[s.dir] ?? ROADBOOK_BY_ID.straight;
               return (
                 <div key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-center gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5 ${checked.has(i) ? "opacity-60" : ""}`}>
-                  <span className="shrink-0 rounded-soft bg-paper p-0.5"><TulipGlyph dir={s.dir} /></span>
+                  <span className="shrink-0 rounded-soft bg-paper p-0.5"><TulipGlyph dir={s.dir} roads={s.roads} take={s.take} /></span>
                   <div className="flex-1">
                     <div className={`font-bold text-teal-dark ${checked.has(i) ? "line-through" : ""}`}>
                       {s.dist ? `Na ${s.dist >= 1000 ? `${(s.dist / 1000).toFixed(1)} km` : `${s.dist} m`}: ` : ""}{d.label}

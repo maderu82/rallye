@@ -822,7 +822,14 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveStep?.note ?? "" };
       const pd = perPoint[i];
       const suggested = smartDirs?.[i] ?? a.dir;
-      return { dist: a.dist, dir: pd?.dir ?? suggested, note: pd?.note ?? "", ...(pd?.photo ? { photo: pd.photo } : {}) };
+      const jn = road?.junctions?.[i];
+      return {
+        dist: a.dist,
+        dir: pd?.dir ?? suggested,
+        note: pd?.note ?? "",
+        ...(pd?.photo ? { photo: pd.photo } : {}),
+        ...(jn ? { roads: jn.roads, take: jn.take } : {}),
+      };
     });
     run(() => updateLeg(rallyId, leg.id, { turn_points: nextPoints, turn_steps: merged, turn_route: road?.route ?? [] }));
   }
@@ -982,7 +989,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-bold text-white">{i + 1}</span>
                   {vc.showArrow ? (
                     <span className="flex shrink-0 items-center gap-1 rounded-soft border-2 border-[#534AB7]/30 bg-white px-1" title="Zo ziet de speler dit schema">
-                      <TulipGlyph dir={s?.dir ?? "straight"} size={44} />
+                      <TulipGlyph dir={s?.dir ?? "straight"} roads={s?.roads} take={s?.take} size={44} />
                       <span className="pr-1 text-[9px] font-bold uppercase text-polder-grey">schema</span>
                     </span>
                   ) : null}

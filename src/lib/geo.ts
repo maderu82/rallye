@@ -17,9 +17,14 @@ export function haversine(a: LL, b: LL): number {
  * Returns the road geometry (as [lat,lng] pairs) and the per-leg road distance.
  * Returns null on any failure — callers fall back to straight lines.
  */
+export interface Junction {
+  roads: number[]; // screen angles (deg, 0 = straight ahead) of every road here
+  take: number; // screen angle of the road to take
+}
+
 export async function fetchRoadRoute(
   waypoints: LL[],
-): Promise<{ route: [number, number][]; legs: number[]; legGeoms: [number, number][][] } | null> {
+): Promise<{ route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[] } | null> {
   if (waypoints.length < 2) return null;
   // Give up after 7s so a slow/overloaded public OSRM never hangs the editor;
   // callers fall back to straight lines when this returns null.
@@ -36,7 +41,8 @@ export async function fetchRoadRoute(
     const r = data.routes?.[0];
     if (!r) return null;
     const route = (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
-    const rawLegs = (r.legs ?? []) as { distance: number; steps?: { geometry?: { coordinates: [number, number][] } }[] }[];
+    type RawStep = { geometry?: { coordinates: [number, number][] }; intersections?: { bearings?: number[]; out?: number }[] };
+    const rawLegs = (r.legs ?? []) as { distance: number; steps?: RawStep[] }[];
     const legs = rawLegs.map((l) => Math.round(l.distance));
     const legGeoms: [number, number][][] = rawLegs.map((l) => {
       const pts: [number, number][] = [];
@@ -45,7 +51,21 @@ export async function fetchRoadRoute(
       }
       return pts;
     });
-    return { route, legs, legGeoms };
+    // Junction (tulip) per vertex after the start: all roads at that node,
+    // rotated so the road you came from points down, with the taken road marked.
+    const junctions: (Junction | null)[] = legGeoms.map((_, i) => {
+      if (i === legGeoms.length - 1) return null; // arrive
+      const inter = rawLegs[i + 1]?.steps?.[0]?.intersections?.[0];
+      const inbound = bearingIntoEnd(legGeoms[i]);
+      if (!inter?.bearings?.length || inbound == null) return null;
+      const cameFrom = (inbound + 180) % 360;
+      const roads = inter.bearings.map((b) => Math.round((b - cameFrom + 180 + 360) % 360));
+      const outIdx = typeof inter.out === "number" ? inter.out : -1;
+      const outB = bearingFromStart(legGeoms[i + 1]);
+      const take = outIdx >= 0 && outIdx < roads.length ? roads[outIdx] : outB != null ? Math.round((outB - cameFrom + 180 + 360) % 360) : 0;
+      return { roads, take };
+    });
+    return { route, legs, legGeoms, junctions };
   } catch {
     return null;
   } finally {
