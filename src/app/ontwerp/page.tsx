@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { createRally, deleteRally } from "@/lib/designer/actions";
+import { createRally } from "@/lib/designer/actions";
 import { logout } from "@/lib/auth/actions";
+import DeleteRallyButton from "./DeleteRallyButton";
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +49,7 @@ export default async function DesignerHome() {
                     </div>
                   </div>
                   <Link href={`/ontwerp/${r.id}`} className="btn btn-ghost text-sm">Bewerken</Link>
-                  <form action={deleteRally.bind(null, r.id)}>
-                    <button className="btn btn-danger text-sm" type="submit">🗑️</button>
-                  </form>
+                  <DeleteRallyButton rallyId={r.id} rallyName={r.name} />
                 </li>
               ))}
             </ul>

@@ -406,7 +406,14 @@ export default function EditorClient({
               <p className="text-sm text-polder-grey">Selecteer een punt of een traject in de lijst of op de kaart.</p>
             )}
             <div className="mt-4 border-t border-polder-line pt-3">
-              <button className="btn btn-danger w-full text-sm" onClick={() => run(() => deleteRally(rally.id))}>
+              <button
+                className="btn btn-danger w-full text-sm"
+                onClick={() => {
+                  if (confirm(`Weet je zeker dat je "${rally.name}" verwijdert?\n\nAlle teams en scores van deze rally verdwijnen definitief. Dit kan niet ongedaan worden gemaakt.`)) {
+                    run(() => deleteRally(rally.id));
+                  }
+                }}
+              >
                 🗑️ Verwijder deze rally
               </button>
             </div>
