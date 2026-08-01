@@ -114,39 +114,80 @@ function TulipGlyph({ dir, size = 52 }: { dir: string; size?: number }) {
   );
 }
 
-// One-time intro so players learn to recognise the arrival signals.
-function SoundIntro() {
-  const [hidden, setHidden] = useState(true);
-  useEffect(() => {
-    try {
-      setHidden(localStorage.getItem("soundintro") === "1");
-    } catch {
-      setHidden(false);
-    }
-  }, []);
-  if (hidden) return null;
-  const dismiss = () => {
-    try {
-      localStorage.setItem("soundintro", "1");
-    } catch {}
-    setHidden(true);
-  };
+// Short explanation per navigation mode, shown in the intro for the modes this
+// rally actually uses.
+const NAV_INTRO: Record<string, { icon: string; title: string; text: string }> = {
+  compass: { icon: "🧭", title: "Kompas", text: "Volg de pijl naar het punt. Draai tot de gekleurde pijl omhoog wijst (of rijd vooruit) en de afstand daalt." },
+  turn: { icon: "↪️", title: "Bolletje-pijltje", text: "Volg de schema's stap voor stap: het bolletje is jij, de lijn toont de afslag. Vink af wat je gehad hebt." },
+  routebook: { icon: "📖", title: "Routeboek", text: "Volg de geschreven aanwijzingen op volgorde tot je op de bestemming bent." },
+  cryptic: { icon: "🕵️", title: "Cryptische route", text: "Los het raadsel op en ga erheen. Pas als je op die plek bent, verschijnt de volgende aanwijzing." },
+  photo_nav: { icon: "📷", title: "Foto-navigatie", text: "Zoek de plek van de foto. Ben je er, tik 'We zijn er!' — dan komt de volgende foto." },
+  map: { icon: "🗺️", title: "Kaart", text: "Volg de route op de kaart naar het volgende punt." },
+};
+
+// Intro/onboarding shown once after joining: how navigation works in THIS rally
+// + the arrival signals, ending with a confirmation.
+function IntroScreen({
+  rally,
+  navModes,
+  onDone,
+}: {
+  rally: { name: string; brand_logo: string | null };
+  navModes: string[];
+  onDone: () => void;
+}) {
+  const modes = navModes.map((m) => NAV_INTRO[m]).filter(Boolean);
   return (
-    <div className="mx-4 mt-3 rounded-card bg-white p-3 shadow-soft">
-      <div className="flex items-center gap-2">
-        <span className="text-lg">🔔</span>
-        <b className="flex-1 text-sm text-teal-dark">Geluiden — luister ze even</b>
-        <button className="text-xs text-polder-grey underline" onClick={dismiss}>begrepen</button>
-      </div>
-      <p className="mt-1 text-[12px] text-polder-grey">Onderweg krijg je geluid + trilling zodra je een punt bereikt. Zet je telefoongeluid aan.</p>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <button className="btn btn-ghost py-2 text-xs leading-tight" onClick={() => arrivalFeedback("waypoint")}>
-          🔉 Tussenpunt<br />
-          <span className="text-[10px] text-polder-grey">kort piepje</span>
-        </button>
-        <button className="btn btn-ghost py-2 text-xs leading-tight" onClick={() => arrivalFeedback("assignment")}>
-          🔔 Opdrachtpunt<br />
-          <span className="text-[10px] text-polder-grey">ding-dong</span>
+    <div className="fixed inset-0 z-[80] overflow-y-auto bg-teal-dark/60 p-4">
+      <div className="mx-auto my-6 max-w-[480px] rounded-card bg-white p-5 shadow-card">
+        <div className="mb-3 flex items-center gap-3">
+          {rally.brand_logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={rally.brand_logo} alt="" className="h-10 rounded bg-white object-contain" />
+          ) : (
+            <span className="text-3xl">🧭</span>
+          )}
+          <div>
+            <h2 className="text-lg font-bold text-teal-dark">Welkom bij {rally.name}</h2>
+            <p className="text-xs text-polder-grey">Lees dit even door voordat je begint.</p>
+          </div>
+        </div>
+
+        <div className="rounded-soft bg-coral-light p-2.5 text-[12px] text-coral">
+          📡 <b>Zet nauwkeurige locatie én geluid aan.</b> Zonder nauwkeurige locatie klopt de navigatie niet.
+        </div>
+
+        {modes.length ? (
+          <>
+            <h3 className="mt-3 text-sm font-bold uppercase tracking-wide text-teal-dark">Zo navigeer je in deze rally</h3>
+            <div className="mt-1.5 space-y-2">
+              {modes.map((m, i) => (
+                <div key={i} className="flex items-start gap-2.5 rounded-soft border-2 border-polder-line p-2.5">
+                  <span className="text-2xl leading-none">{m.icon}</span>
+                  <div>
+                    <div className="text-sm font-bold text-ink">{m.title}</div>
+                    <div className="text-[12px] text-polder-grey">{m.text}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        <h3 className="mt-3 text-sm font-bold uppercase tracking-wide text-teal-dark">De signalen (tik om te horen)</h3>
+        <div className="mt-1.5 grid grid-cols-2 gap-2">
+          <button className="btn btn-ghost py-2.5 text-xs leading-tight" onClick={() => arrivalFeedback("waypoint")}>
+            🔉 Tussenpunt<br />
+            <span className="text-[10px] text-polder-grey">kort piepje</span>
+          </button>
+          <button className="btn btn-ghost py-2.5 text-xs leading-tight" onClick={() => arrivalFeedback("assignment")}>
+            🔔 Opdrachtpunt<br />
+            <span className="text-[10px] text-polder-grey">ding-dong + trilling</span>
+          </button>
+        </div>
+
+        <button className="btn btn-primary mt-4 w-full" onClick={onDone}>
+          ✅ Ik heb het begrepen — beginnen!
         </button>
       </div>
     </div>
@@ -265,6 +306,15 @@ export default function PlayClient({
   const [geoDenied, setGeoDenied] = useState(false);
   const [gpsAcc, setGpsAcc] = useState<number | null>(null);
   const [gpsWarnHidden, setGpsWarnHidden] = useState(false);
+  const navModesUsed = useMemo(() => Array.from(new Set(state.legs.map((l) => l.nav_mode))), [state.legs]);
+  const [showIntro, setShowIntro] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(`intro:${state.rally.id}`) !== "1") setShowIntro(true);
+    } catch {
+      setShowIntro(true);
+    }
+  }, [state.rally.id]);
 
   // Ask for location up front so the browser prompt appears at the start of the
   // rally (GPS is needed for unlocking assignments and for the compass).
@@ -420,7 +470,18 @@ export default function PlayClient({
         </div>
       </header>
 
-      <SoundIntro />
+      {showIntro ? (
+        <IntroScreen
+          rally={state.rally}
+          navModes={navModesUsed}
+          onDone={() => {
+            try {
+              localStorage.setItem(`intro:${rallyId}`, "1");
+            } catch {}
+            setShowIntro(false);
+          }}
+        />
+      ) : null}
 
       <div className="flex-1 p-4 pb-24">
         {geoDenied ? (
@@ -1315,6 +1376,7 @@ function SpeedTest({
   const [phase, setPhase] = useState<"idle" | "measuring">("idle");
   const [distM, setDistM] = useState(0);
   const [elapsed, setElapsed] = useState(0);
+  const [curSpeed, setCurSpeed] = useState<number | null>(null); // instantaneous gps km/h
   const watchRef = useRef<number | null>(null);
   const startRef = useRef(0);
   const lastRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -1354,6 +1416,8 @@ function SpeedTest({
         if (lastRef.current) distRef.current += haversine(lastRef.current, cur);
         lastRef.current = cur;
         setDistM(Math.round(distRef.current));
+        const sp = p.coords.speed; // GPS speed (m/s) → km/h; hide the average
+        setCurSpeed(sp != null && sp >= 0 ? Math.round(sp * 3.6) : null);
         // auto-finish once the configured course length is covered → everyone
         // is judged over the same distance.
         if (courseM > 0 && distRef.current >= courseM) {
@@ -1382,8 +1446,9 @@ function SpeedTest({
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-teal-dark">{(distM / 1000).toFixed(2)}</b><span className="text-[11px] text-polder-grey">km</span></div>
             <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-teal-dark">{Math.floor(elapsed / 60)}:{String(Math.floor(elapsed % 60)).padStart(2, "0")}</b><span className="text-[11px] text-polder-grey">tijd</span></div>
-            <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-coral">{Math.round(avg)}</b><span className="text-[11px] text-polder-grey">km/u nu</span></div>
+            <div className="rounded-soft bg-teal-light p-2"><b className="block text-lg text-coral">{curSpeed != null ? curSpeed : "—"}</b><span className="text-[11px] text-polder-grey">km/u nu (gps)</span></div>
           </div>
+          <p className="text-center text-[11px] text-polder-grey">Je gemiddelde zie je pas na afloop — houd de doelsnelheid aan op je snelheidsmeter.</p>
           {courseM > 0 ? (
             <div>
               <div className="h-2 overflow-hidden rounded bg-polder-line"><i className="block h-full rounded bg-coral" style={{ width: `${pct}%` }} /></div>
