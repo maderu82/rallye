@@ -981,8 +981,9 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                 <div className="mb-1.5 flex flex-wrap items-center gap-2">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-bold text-white">{i + 1}</span>
                   {vc.showArrow ? (
-                    <span className="shrink-0 rounded bg-paper" title="Zo ziet de speler dit schema">
-                      <TulipGlyph dir={s?.dir ?? "straight"} size={38} />
+                    <span className="flex shrink-0 items-center gap-1 rounded-soft border-2 border-[#534AB7]/30 bg-white px-1" title="Zo ziet de speler dit schema">
+                      <TulipGlyph dir={s?.dir ?? "straight"} size={44} />
+                      <span className="pr-1 text-[9px] font-bold uppercase text-polder-grey">schema</span>
                     </span>
                   ) : null}
                   {vc.showDist ? (
