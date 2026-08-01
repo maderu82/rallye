@@ -423,6 +423,13 @@ export default function PlayClient({
         <div className="rounded-full bg-teal-dark px-3 py-1.5 text-sm font-bold">
           <span>{score}</span> ptn
         </div>
+        <button
+          onClick={() => setShowIntro(true)}
+          className="ml-1 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full border-2 border-white/50 text-sm font-bold"
+          title="Uitleg & signalen opnieuw bekijken"
+        >
+          ?
+        </button>
       </header>
 
       {showIntro ? (
