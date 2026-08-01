@@ -44,32 +44,37 @@ function ensureAudio(): AudioContext | null {
     return null;
   }
 }
-function tone(ctx: AudioContext, freq: number, at: number, dur: number) {
+function tone(ctx: AudioContext, freq: number, at: number, dur: number, vol = 0.2) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = "sine";
   osc.frequency.value = freq;
   gain.gain.setValueAtTime(0.0001, at);
-  gain.gain.exponentialRampToValueAtTime(0.2, at + 0.02);
+  gain.gain.exponentialRampToValueAtTime(vol, at + 0.02);
   gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
   osc.connect(gain).connect(ctx.destination);
   osc.start(at);
   osc.stop(at + dur + 0.03);
 }
-// "assignment" = reached a rally point (ding-dong); "waypoint" = intermediate.
+// "assignment" = reached a rally point: a grand rising 3-note chime (bigger).
+// "waypoint" = intermediate point: the two-tone "ding-dong".
 function arrivalFeedback(kind: "assignment" | "waypoint") {
   const ctx = ensureAudio();
   if (ctx) {
     const t = ctx.currentTime;
     if (kind === "assignment") {
+      // ascending major triad ending on a held, fuller note — feels "big".
+      tone(ctx, 660, t, 0.18, 0.24);
+      tone(ctx, 880, t + 0.17, 0.18, 0.26);
+      tone(ctx, 1320, t + 0.34, 0.55, 0.3);
+    } else {
+      // two-tone ding-dong for an intermediate waypoint
       tone(ctx, 880, t, 0.16);
       tone(ctx, 1245, t + 0.18, 0.3);
-    } else {
-      tone(ctx, 740, t, 0.14);
     }
   }
   try {
-    navigator.vibrate?.(kind === "assignment" ? [140, 70, 140] : 90);
+    navigator.vibrate?.(kind === "assignment" ? [200, 90, 200, 90, 300] : [140, 70, 140]);
   } catch {
     /* not supported */
   }
@@ -140,11 +145,11 @@ function IntroScreen({
         <div className="mt-1.5 grid grid-cols-2 gap-2">
           <button className="btn btn-ghost py-2.5 text-xs leading-tight" onClick={() => arrivalFeedback("waypoint")}>
             🔉 Tussenpunt<br />
-            <span className="text-[10px] text-polder-grey">kort piepje</span>
+            <span className="text-[10px] text-polder-grey">ding-dong</span>
           </button>
           <button className="btn btn-ghost py-2.5 text-xs leading-tight" onClick={() => arrivalFeedback("assignment")}>
             🔔 Opdrachtpunt<br />
-            <span className="text-[10px] text-polder-grey">ding-dong + trilling</span>
+            <span className="text-[10px] text-polder-grey">groot melodietje + trilling</span>
           </button>
         </div>
 
