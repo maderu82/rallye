@@ -117,6 +117,7 @@ export default function EditorClient({
   const [tab, setTab] = useState<"build" | "live">("build");
   const [sel, setSel] = useState<Sel>(null);
   const [addMode, setAddMode] = useState(false);
+  const [expandedMap, setExpandedMap] = useState(false);
 
   function run(fn: () => Promise<unknown>) {
     start(async () => {
@@ -361,6 +362,7 @@ export default function EditorClient({
                 ⬆️ Importeer GPX
                 <input type="file" accept=".gpx,application/gpx+xml,text/xml" className="hidden" onChange={handleGpx} />
               </label>
+              <button className="btn btn-ghost text-sm" onClick={() => setExpandedMap(true)}>⛶ Groot bewerken</button>
               {addMode ? <span className="chip chip-teal">Klik op de kaart om het punt te plaatsen (gps wordt automatisch ingevuld)</span> : null}
             </div>
             <RallyMap
@@ -373,9 +375,34 @@ export default function EditorClient({
               onMovePoint={(id, lat, lng) => run(() => updatePoint(rally.id, id, { lat, lng }))}
             />
             <div className="mt-3 rounded-soft bg-teal-light p-2.5 text-[13px] text-teal-dark">
-              🗺️ Echte kaart (OpenStreetMap). Sleep een punt om het te verplaatsen; de gps-locatie wordt automatisch bijgewerkt. Selecteer een traject in de lijst links.
+              🗺️ Echte kaart (OpenStreetMap). Sleep een punt om het te verplaatsen; de gps-locatie wordt automatisch bijgewerkt. Selecteer een traject in de lijst links. Tip: <b>⛶ Groot bewerken</b> voor een groter scherm.
             </div>
           </div>
+
+          {expandedMap ? (
+            <div className="fixed inset-0 z-[70] flex flex-col bg-paper p-3">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="text-sm font-bold text-teal-dark">Kaart — hele rally</span>
+                <button className={`btn text-sm ${addMode ? "btn-coral" : "btn-ghost"}`} onClick={() => setAddMode((v) => !v)}>
+                  {addMode ? "✖ Annuleer plaatsen" : "➕ Nieuw punt op de kaart"}
+                </button>
+                {addMode ? <span className="chip chip-teal">Klik op de kaart om het punt te plaatsen</span> : null}
+                <button className="btn btn-primary ml-auto text-sm" onClick={() => setExpandedMap(false)}>✓ Klaar</button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden rounded-xl">
+                <RallyMap
+                  points={mapPoints}
+                  selectedId={sel?.kind === "point" ? sel.id : null}
+                  editable
+                  addMode={addMode}
+                  onAddPoint={handleAddPoint}
+                  onSelectPoint={(id) => setSel({ kind: "point", id })}
+                  onMovePoint={(id, lat, lng) => run(() => updatePoint(rally.id, id, { lat, lng }))}
+                  height={typeof window !== "undefined" ? window.innerHeight - 90 : 600}
+                />
+              </div>
+            </div>
+          ) : null}
 
           {/* settings */}
           <div className="card">
@@ -1182,6 +1209,21 @@ function LiveView({
 }) {
   const maxIndex = Math.max(1, points.length - 1);
   const [openTeam, setOpenTeam] = useState<string | null>(null);
+  const [expandedLive, setExpandedLive] = useState(false);
+
+  // Shared map data so the inline and full-screen live maps stay identical.
+  const liveMapPoints = points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, label: labelOf(p), kind: p.kind }));
+  const liveMapTeams = teams
+    .map((t, i): MapTeam | null => {
+      const real = t.last_lat != null && t.last_lng != null ? ([t.last_lat, t.last_lng] as [number, number]) : null;
+      const pos = real ?? geoPos(points, Math.min(1, t.current_index / maxIndex));
+      return pos ? { id: t.id, name: t.name, lat: pos[0], lng: pos[1], color: TEAM_COLORS[i % TEAM_COLORS.length] } : null;
+    })
+    .filter((x): x is MapTeam => x !== null);
+  const liveMapTrails = teams
+    .map((t, i) => ({ id: t.id, color: TEAM_COLORS[i % TEAM_COLORS.length], path: trails[t.id]?.path ?? [] }))
+    .filter((tr) => tr.path.length >= 2 && (!openTeam || tr.id === openTeam))
+    .map(({ color, path }) => ({ color, path }));
 
   // Realtime: refresh team positions/scores as team_scores changes.
   useEffect(() => {
@@ -1200,26 +1242,30 @@ function LiveView({
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[1fr_360px]">
       <div className="card">
-        <h3 className="mb-2.5 text-sm font-bold uppercase tracking-wide text-teal-dark">Live kaart — posities van de teams</h3>
-        <RallyMap
-          points={points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, label: labelOf(p), kind: p.kind }))}
-          teams={teams
-            .map((t, i): MapTeam | null => {
-              // prefer the team's real reported GPS; fall back to a progress estimate
-              const real = t.last_lat != null && t.last_lng != null ? ([t.last_lat, t.last_lng] as [number, number]) : null;
-              const pos = real ?? geoPos(points, Math.min(1, t.current_index / maxIndex));
-              return pos ? { id: t.id, name: t.name, lat: pos[0], lng: pos[1], color: TEAM_COLORS[i % TEAM_COLORS.length] } : null;
-            })
-            .filter((x): x is MapTeam => x !== null)}
-          trails={teams
-            // when a team is opened, show only their trail (isolate the route)
-            .map((t, i) => ({ id: t.id, color: TEAM_COLORS[i % TEAM_COLORS.length], path: trails[t.id]?.path ?? [] }))
-            .filter((tr) => tr.path.length >= 2 && (!openTeam || tr.id === openTeam))
-            .map(({ color, path }) => ({ color, path }))}
-        />
+        <div className="mb-2.5 flex items-center gap-2">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-teal-dark">Live kaart — posities van de teams</h3>
+          <button className="btn btn-ghost ml-auto text-sm" onClick={() => setExpandedLive(true)}>⛶ Groot bekijken</button>
+        </div>
+        <RallyMap points={liveMapPoints} teams={liveMapTeams} trails={liveMapTrails} />
         <p className="mt-2 text-xs text-polder-grey">
           {openTeam ? "Je ziet nu het spoor van het geopende team. Klik het team dicht voor alle sporen." : "Tip: klik hieronder een team open om alleen hún gereden spoor op de kaart te zien."}
         </p>
+        {expandedLive ? (
+          <div className="fixed inset-0 z-[70] flex flex-col bg-paper p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-sm font-bold text-teal-dark">Live kaart — hele rally</span>
+              <button className="btn btn-primary ml-auto text-sm" onClick={() => setExpandedLive(false)}>✓ Klaar</button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden rounded-xl">
+              <RallyMap
+                points={liveMapPoints}
+                teams={liveMapTeams}
+                trails={liveMapTrails}
+                height={typeof window !== "undefined" ? window.innerHeight - 90 : 600}
+              />
+            </div>
+          </div>
+        ) : null}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <div className="rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
             👀 Alleen meekijken · <span className="font-bold text-teal">● live</span> — bijgewerkt zodra teams scoren.
