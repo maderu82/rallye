@@ -8,6 +8,7 @@ import type { Assignment, Leg, Point, Rally } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import type { MapPoint, MapTeam } from "@/components/RallyMap";
 import AssignmentConfig from "./AssignmentConfig";
+import TulipGlyph from "@/components/TulipGlyph";
 
 // Real map is client-only (Leaflet needs window).
 const RallyMap = dynamic(() => import("@/components/RallyMap"), {
@@ -979,6 +980,11 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
               <div key={i} className={`rounded-soft border-2 p-2 ${warn ? "border-[#D85A30] bg-coral-light" : "border-polder-line"}`}>
                 <div className="mb-1.5 flex flex-wrap items-center gap-2">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-bold text-white">{i + 1}</span>
+                  {vc.showArrow ? (
+                    <span className="shrink-0 rounded bg-paper" title="Zo ziet de speler dit schema">
+                      <TulipGlyph dir={s?.dir ?? "straight"} size={38} />
+                    </span>
+                  ) : null}
                   {vc.showDist ? (
                     <span className="text-xs font-semibold text-polder-grey">
                       na {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist} m`}:
