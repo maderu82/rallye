@@ -144,9 +144,15 @@ export default function EditorClient({
       const existing: RoadbookStep[] = Array.isArray(leg.turn_steps) ? leg.turn_steps : [];
       const auto = deriveRoadbook(p, [], road.legs);
       const smartDirs = road.legGeoms ? roadbookDirsFromGeom(road.legGeoms) : null;
-      const arriveNote = existing.length > tps.length ? existing[existing.length - 1]?.note ?? "" : "";
+      const arriveOld = existing.length > tps.length ? existing[existing.length - 1] : undefined;
       const merged: RoadbookStep[] = auto.map((a, i) => {
-        if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveNote };
+        if (i === auto.length - 1) return {
+          dist: a.dist,
+          dir: "arrive",
+          note: arriveOld?.note ?? "",
+          ...(arriveOld?.picto ? { picto: arriveOld.picto } : {}),
+          ...(arriveOld?.danger ? { danger: arriveOld.danger } : {}),
+        };
         const pd = existing[i];
         const jn = road.junctions?.[i];
         // Recompute is authoritative: re-derive the direction from the actual
@@ -1005,7 +1011,13 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     // the straight-line derivation when routing failed.
     const smartDirs = road?.legGeoms ? roadbookDirsFromGeom(road.legGeoms) : null;
     const merged: RoadbookStep[] = auto.map((a, i) => {
-      if (i === auto.length - 1) return { dist: a.dist, dir: "arrive", note: arriveStep?.note ?? "" };
+      if (i === auto.length - 1) return {
+        dist: a.dist,
+        dir: "arrive",
+        note: arriveStep?.note ?? "",
+        ...(arriveStep?.picto ? { picto: arriveStep.picto } : {}),
+        ...(arriveStep?.danger ? { danger: arriveStep.danger } : {}),
+      };
       const pd = perPoint[i];
       const jn = road?.junctions?.[i];
       // Newly placed points get the junction-accurate direction; a direction you
@@ -1082,57 +1094,43 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   );
 
   return (
-    <div className="space-y-2">
-      <label className="field-label">{vc.header}</label>
+    <div className={expanded ? "fixed inset-0 z-[70] flex flex-col gap-2 bg-paper p-3" : "space-y-2"}>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="field-label m-0">{expanded ? vc.header.split(" — ")[0] : vc.header}</label>
+        {start && end ? (
+          expanded ? (
+            <button className="btn btn-primary ml-auto text-sm" onClick={() => setExpanded(false)}>✓ Klaar met bewerken</button>
+          ) : (
+            <button className="btn btn-ghost ml-auto text-sm" onClick={() => setExpanded(true)}>⛶ Groot bewerken</button>
+          )
+        ) : null}
+      </div>
       {!start || !end ? (
         <p className="rounded-soft bg-coral-light p-2 text-xs text-coral">Geef eerst het begin- en eindpunt van dit traject een gps-locatie (op de kaart of via lat/lng).</p>
       ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className={expanded ? "flex min-h-0 flex-1 gap-3 overflow-hidden" : "space-y-2"}>
+          <div className={expanded ? "flex min-w-0 flex-1 flex-col gap-2" : "space-y-2"}>
             {mapToolbar}
-            <button className="btn btn-ghost text-sm" onClick={() => setExpanded(true)}>⛶ Groot bewerken</button>
+            <div className={expanded ? "min-h-0 flex-1 overflow-hidden rounded-xl" : ""}>
+              <RoadbookMap
+                start={start}
+                end={end}
+                turnPoints={turnPoints}
+                dirs={mapDirs}
+                route={leg.turn_route}
+                addMode={addMode}
+                onAddPoint={addPointAt}
+                onMovePoint={movePointAt}
+                height={expanded ? (typeof window !== "undefined" ? window.innerHeight - 150 : 520) : 340}
+              />
+            </div>
+            {!expanded ? <p className="text-xs text-polder-grey">De route loopt <b>langs de wegen</b> (paars); afstanden zijn echte weg-afstanden. Sleep een punt om het te verschuiven. Tip: <b>⛶ Groot bewerken</b> voor een groter scherm met de punten ernaast. {variant === "line" ? "Spelers zien deze lijn op de kaart (maar de gps begeleidt niet)." : "Deze kaart zien alleen jij — spelers krijgen alleen het routeboek."}</p> : null}
           </div>
-          <RoadbookMap
-            start={start}
-            end={end}
-            turnPoints={turnPoints}
-            dirs={mapDirs}
-            route={leg.turn_route}
-            addMode={addMode}
-            onAddPoint={addPointAt}
-            onMovePoint={movePointAt}
-          />
-          <p className="text-xs text-polder-grey">De route loopt <b>langs de wegen</b> (paars); afstanden zijn echte weg-afstanden. Sleep een punt om het te verschuiven. Tip: <b>⛶ Groot bewerken</b> voor een groter scherm. {variant === "line" ? "Spelers zien deze lijn op de kaart (maar de gps begeleidt niet)." : "Deze kaart zien alleen jij — spelers krijgen alleen het routeboek."}</p>
-        </>
-      )}
-
-      {expanded ? (
-        <div className="fixed inset-0 z-[70] flex flex-col bg-paper p-3">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-bold text-teal-dark">{vc.header.split(" — ")[0]}</span>
-            <button className="btn btn-primary ml-auto text-sm" onClick={() => setExpanded(false)}>✓ Klaar met bewerken</button>
-          </div>
-          {mapToolbar}
-          <div className="mt-2 min-h-0 flex-1 overflow-hidden rounded-xl">
-            <RoadbookMap
-              start={start}
-              end={end}
-              turnPoints={turnPoints}
-              dirs={mapDirs}
-              route={leg.turn_route}
-              addMode={addMode}
-              onAddPoint={addPointAt}
-              onMovePoint={movePointAt}
-              height={typeof window !== "undefined" ? window.innerHeight - 170 : 520}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      {/* One row per map point: distance (auto) + direction/photo + instruction */}
-      {turnPoints.length > 0 ? (
-        <div className="mt-2 space-y-2">
-          <label className="field-label">{vc.listLabel}</label>
+          <div className={expanded ? "w-[370px] shrink-0 space-y-2 overflow-y-auto pr-1" : "space-y-2"}>
+            {/* One row per map point: distance (auto) + direction/photo + instruction */}
+            {turnPoints.length > 0 ? (
+              <div className="space-y-2">
+                <label className="field-label">{vc.listLabel}</label>
           {turnPoints.map((_, i) => {
             const s = pointSteps[i];
             const dist = s?.dist ?? 0;
@@ -1281,16 +1279,56 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
               </div>
             );
           })}
-          {arriveStep ? (
-            <div className="flex items-center gap-2 rounded-soft bg-teal-light p-2 text-sm text-teal-dark">
-              <span className="text-lg">🏁</span>
-              <span>na {arriveStep.dist >= 1000 ? `${(arriveStep.dist / 1000).toFixed(1)} km` : `${arriveStep.dist} m`}: aankomst op de bestemming</span>
-            </div>
-          ) : null}
+          {arriveStep ? (() => {
+            const ai = steps.length - 1; // the arrive step lives last in turn_steps
+            return (
+              <div className="rounded-soft border-2 border-teal bg-teal-light p-2">
+                <div className="mb-1.5 flex items-center gap-2 text-sm font-bold text-teal-dark">
+                  <span className="text-lg">🏁</span>
+                  <span>Aankomst op de bestemming — na {arriveStep.dist >= 1000 ? `${(arriveStep.dist / 1000).toFixed(1)} km` : `${arriveStep.dist} m`}</span>
+                </div>
+                <input
+                  defaultValue={arriveStep.note ?? ""}
+                  className="input w-full"
+                  placeholder="aanwijzing bij het eindpunt (bijv. 'stop bij de kerk, laatste opdracht')"
+                  onBlur={(e) => setStep(ai, { note: e.target.value })}
+                />
+                {variant === "dakar" ? (
+                  <>
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                      <span className="mr-1 text-[11px] font-semibold text-polder-grey">Herkenningspunt:</span>
+                      {PICTOS.map((pc) => {
+                        const active = arriveStep.picto === pc.id;
+                        return (
+                          <button key={pc.id} title={pc.label} onClick={() => setStep(ai, { picto: active ? undefined : pc.id })} className={`flex h-8 w-8 items-center justify-center rounded-soft border-2 ${active ? "border-teal bg-white text-teal-dark" : "border-polder-line text-polder-grey"}`}>
+                            <Picto id={pc.id} size={20} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                      <span className="mr-1 text-[11px] font-semibold text-polder-grey">Let op:</span>
+                      {[0, 1, 2].map((lvl) => {
+                        const active = (arriveStep.danger ?? 0) === lvl;
+                        return (
+                          <button key={lvl} onClick={() => setStep(ai, { danger: lvl === 0 ? undefined : lvl })} className={`rounded-soft border-2 px-2 py-1 text-xs ${active ? (lvl === 0 ? "border-polder-line font-bold" : "border-[#D85A30] bg-white font-bold text-coral") : "border-polder-line text-polder-grey"}`}>
+                            {DANGER_LABEL[lvl]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            );
+          })() : null}
         </div>
-      ) : start && end ? (
-        <p className="text-xs text-polder-grey">{vc.empty}</p>
-      ) : null}
+            ) : start && end ? (
+              <p className="text-xs text-polder-grey">{vc.empty}</p>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
