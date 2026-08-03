@@ -306,20 +306,39 @@ export async function deletePoint(rallyId: string, pointId: string) {
   const db = await createClient();
   await requireUser(db);
 
-  const { error } = await db.from("points").delete().eq("id", pointId);
-  if (error) throw new Error(error.message);
+  // Position of the point being removed, and the point count, BEFORE deletion.
+  const { data: ptsBefore } = await db.from("points").select("id,position").eq("rally_id", rallyId).order("position");
+  const all = ptsBefore ?? [];
+  const D = all.findIndex((p) => p.id === pointId);
+  const nptsBefore = all.length;
 
-  // Keep legs = points − 1 and positions contiguous. Wrapped so a hiccup here
-  // never hides the fact that the point itself was deleted.
+  const { error } = await db.from("points").delete().eq("id", pointId);
+  if (error) return { error: error.message };
+
+  // Re-attach navigation routes to the correct point pairs. Legs connect
+  // point[position] → point[position+1]. Removing point D invalidates the two
+  // legs touching it (positions D-1 and D); the routes further along keep their
+  // content and just shift down one position. If D was an interior point, a new
+  // empty route is created between the now-adjacent neighbours. Wrapped so a
+  // hiccup never hides that the point itself was deleted.
   try {
-    const { data: legs } = await db.from("legs").select("id,position").eq("rally_id", rallyId).order("position");
-    if (legs?.length) {
-      await db.from("legs").delete().eq("id", legs[legs.length - 1].id);
+    if (D >= 0) {
+      const { data: legsRaw } = await db.from("legs").select("id,position").eq("rally_id", rallyId).order("position");
+      const legs = legsRaw ?? [];
+      // 1) delete the legs whose endpoints included the removed point
+      for (const l of legs.filter((l) => l.position === D - 1 || l.position === D)) {
+        await db.from("legs").delete().eq("id", l.id);
+      }
+      // 2) shift legs after the gap down by one (ascending → no unique clash)
+      for (const l of legs.filter((l) => l.position >= D + 1).sort((a, b) => a.position - b.position)) {
+        await db.from("legs").update({ position: l.position - 1 }).eq("id", l.id);
+      }
+      // 3) an interior point leaves two neighbours that now need a fresh route
+      const interior = D >= 1 && D <= nptsBefore - 2;
+      if (interior) await db.from("legs").insert({ rally_id: rallyId, position: D - 1, nav_mode: "routebook" });
     }
     const { data: points } = await db.from("points").select("id").eq("rally_id", rallyId).order("position");
-    const { data: legs2 } = await db.from("legs").select("id").eq("rally_id", rallyId).order("position");
     await resequence(db, "points", (points ?? []).map((p) => p.id));
-    await resequence(db, "legs", (legs2 ?? []).map((l) => l.id));
     await recomputeKinds(db, rallyId);
   } catch {
     // ignore — the point is deleted; ordering will self-heal on the next change
