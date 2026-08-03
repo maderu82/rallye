@@ -399,12 +399,20 @@ export default function PlayClient({
   // Branding: theme the primary button + progress with the rally color, and
   // pick a readable ink color (dark on a light brand, white on a dark one).
   const brand = state.rally.brand_color;
-  const brandStyle = brand
-    ? ({ "--brand": brand, "--brand-ink": readableInk(brand) } as CSSProperties)
+  const brand2 = state.rally.brand_color2;
+  const brandStyle = brand || brand2
+    ? ({
+        "--brand": brand ?? brand2!,
+        "--brand-ink": readableInk(brand ?? brand2!),
+        "--brand2": brand2 ?? brand ?? "",
+        "--brand2-ink": readableInk(brand2 ?? brand ?? "#534AB7"),
+      } as CSSProperties)
     : undefined;
+  // Header: a gradient between the two brand colors when both are set.
+  const headerBg = brand && brand2 ? `linear-gradient(120deg, ${brand}, ${brand2})` : brand || undefined;
 
   return (
-    <main className={`mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col ${brand ? "branded" : ""}`} style={brandStyle}>
+    <main className={`mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col ${brand || brand2 ? "branded" : ""}`} style={brandStyle}>
       {testMode ? (
         <div className="flex items-center justify-center gap-3 bg-[#FFF4D6] px-4 py-1.5 text-center text-xs font-bold text-[#7A5D00]">
           <span>🧪 Testmodus — hulpknoppen zijn zichtbaar; deelnemers zien deze niet.</span>
@@ -427,7 +435,7 @@ export default function PlayClient({
       ) : null}
       <header
         className="sticky top-0 z-30 flex items-center gap-2.5 bg-teal px-4 py-3 text-white shadow-soft"
-        style={state.rally.brand_color ? { background: state.rally.brand_color } : undefined}
+        style={headerBg ? { background: headerBg } : undefined}
       >
         <a href="/" className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/20 text-base" title="Startscherm">
           ⌂

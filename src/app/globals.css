@@ -108,6 +108,9 @@ body {
 .branded .progress span.done {
   background: var(--brand);
 }
+.branded .progress span.cur {
+  background: var(--brand2, var(--brand));
+}
 .branded .input:focus {
   --tw-ring-color: color-mix(in srgb, var(--brand) 40%, transparent);
 }

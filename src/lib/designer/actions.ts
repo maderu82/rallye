@@ -94,7 +94,7 @@ export async function updateJoinCode(rallyId: string, code: string): Promise<{ e
 
 export async function updateRallyBranding(
   rallyId: string,
-  fields: { brand_color?: string | null; brand_logo?: string | null },
+  fields: { brand_color?: string | null; brand_color2?: string | null; brand_logo?: string | null },
 ): Promise<{ error?: string } | void> {
   const db = await createClient();
   await requireUser(db);

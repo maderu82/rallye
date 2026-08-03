@@ -310,7 +310,7 @@ export default function EditorClient({
       <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-polder-grey">
         <span className="font-semibold text-teal-dark">🎨 Branding:</span>
         <label className="flex items-center gap-1.5">
-          Kleur
+          Kleur 1
           <input
             type="color"
             defaultValue={rally.brand_color ?? "#1D9E75"}
@@ -318,8 +318,17 @@ export default function EditorClient({
             onChange={(e) => run(() => updateRallyBranding(rally.id, { brand_color: e.target.value }))}
           />
         </label>
-        {rally.brand_color ? (
-          <button className="underline" onClick={() => run(() => updateRallyBranding(rally.id, { brand_color: null }))}>standaardkleur</button>
+        <label className="flex items-center gap-1.5" title="Tweede accentkleur (o.a. de gradient-header en huidige stap).">
+          Kleur 2
+          <input
+            type="color"
+            defaultValue={rally.brand_color2 ?? rally.brand_color ?? "#534AB7"}
+            className="h-7 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+            onChange={(e) => run(() => updateRallyBranding(rally.id, { brand_color2: e.target.value }))}
+          />
+        </label>
+        {rally.brand_color || rally.brand_color2 ? (
+          <button className="underline" onClick={() => run(() => updateRallyBranding(rally.id, { brand_color: null, brand_color2: null }))}>standaardkleuren</button>
         ) : null}
         <BrandLogo rally={rally} run={run} />
         <span className="text-polder-grey">— kleur en logo verschijnen in de spelers-app.</span>

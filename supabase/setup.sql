@@ -16,6 +16,7 @@ create table if not exists public.rallies (
   published   boolean not null default false,
   speed_limit int,
   brand_color text,
+  brand_color2 text,
   brand_logo  text,
   deleted_at  timestamptz,
   created_at  timestamptz not null default now(),
@@ -23,6 +24,7 @@ create table if not exists public.rallies (
 );
 alter table public.rallies add column if not exists speed_limit int;
 alter table public.rallies add column if not exists brand_color text;
+alter table public.rallies add column if not exists brand_color2 text;
 alter table public.rallies add column if not exists brand_logo text;
 alter table public.rallies add column if not exists deleted_at timestamptz;
 -- every rally code starts with RLY-; normalize any legacy codes that don't
