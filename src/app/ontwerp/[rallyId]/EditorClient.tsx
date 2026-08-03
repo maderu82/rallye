@@ -751,7 +751,7 @@ function LegSettings({
         </>
       ) : null}
 
-      {leg.nav_mode === "turn" || leg.nav_mode === "dakar" ? (
+      {leg.nav_mode === "turn" || leg.nav_mode === "dakar" || leg.nav_mode === "cryptic" ? (
         <div className="grid grid-cols-2 gap-2 rounded-soft bg-paper p-3">
           <p className="col-span-2 text-sm font-bold text-teal-dark">🎯 Score voor het volgen van de route (optioneel)</p>
           <div>
