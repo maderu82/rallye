@@ -118,6 +118,14 @@ export async function updateRallySpeedLimit(rallyId: string, speedLimit: number 
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+export async function updateRallyIdleLimit(rallyId: string, idleLimit: number | null) {
+  const db = await createClient();
+  await requireUser(db);
+  const { error } = await db.from("rallies").update({ idle_limit: idleLimit }).eq("id", rallyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 // ── team management (organizer) ──────────────────────────────────────────────
 async function requireOwner(rallyId: string) {
   const db = await createClient();

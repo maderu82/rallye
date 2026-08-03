@@ -15,6 +15,7 @@ create table if not exists public.rallies (
   join_code   text not null unique,
   published   boolean not null default false,
   speed_limit int,
+  idle_limit  int,
   brand_color text,
   brand_color2 text,
   brand_logo  text,
@@ -23,6 +24,7 @@ create table if not exists public.rallies (
   updated_at  timestamptz not null default now()
 );
 alter table public.rallies add column if not exists speed_limit int;
+alter table public.rallies add column if not exists idle_limit int;
 alter table public.rallies add column if not exists brand_color text;
 alter table public.rallies add column if not exists brand_color2 text;
 alter table public.rallies add column if not exists brand_logo text;

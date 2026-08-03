@@ -15,7 +15,13 @@ export type LegSpeed = {
   over: boolean;
 };
 
-export type TeamTrail = { path: [number, number][]; peakKmh: number | null; lastAcc: number | null };
+export type TeamTrail = {
+  path: [number, number][];
+  peakKmh: number | null;
+  lastAcc: number | null;
+  idleMin: number | null; // minutes stationary at the current spot
+  recentKmh: number | null; // pace over the last ~2 min (for ETA)
+};
 
 export type ActivityItem = {
   label: string;
@@ -163,33 +169,49 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
   try {
     const probes = await Promise.all([
       admin.from("legs").select("photo_radius,photo_buy_cost,speed_limit,route_points,route_corridor,enroute_hint,enroute_hint_cost").limit(1),
-      admin.from("rallies").select("speed_limit,deleted_at,brand_color2").limit(1),
+      admin.from("rallies").select("speed_limit,deleted_at,brand_color2,idle_limit").limit(1),
     ]);
     schemaBehind = probes.some((p) => p.error != null);
   } catch {
     schemaBehind = true;
   }
 
-  // Breadcrumb trails + peak speed per team (safety monitoring / route replay).
+  // Breadcrumb trails + peak speed per team (safety monitoring / route replay),
+  // plus stationary duration and recent pace for the live dashboard.
   const teamTrails: Record<string, TeamTrail> = {};
   const { data: positions } = await admin
     .from("team_positions")
-    .select("team_id,lat,lng,speed,accuracy")
+    .select("team_id,lat,lng,speed,accuracy,created_at")
     .eq("rally_id", rallyId)
     .order("created_at")
     .limit(8000);
-  for (const p of (positions ?? []) as { team_id: string; lat: number; lng: number; speed: number | null; accuracy: number | null }[]) {
-    const t = (teamTrails[p.team_id] ??= { path: [], peakKmh: null, lastAcc: null });
-    t.path.push([p.lat, p.lng]);
-    if (p.accuracy != null) t.lastAcc = Math.round(p.accuracy); // rows are asc → ends on latest
-    if (p.speed != null) {
-      const kmh = p.speed * 3.6;
-      if (t.peakKmh == null || kmh > t.peakKmh) t.peakKmh = kmh;
-    }
+  type Pos = { lat: number; lng: number; speed: number | null; accuracy: number | null; t: number };
+  const posByTeam: Record<string, Pos[]> = {};
+  for (const p of (positions ?? []) as { team_id: string; lat: number; lng: number; speed: number | null; accuracy: number | null; created_at: string }[]) {
+    (posByTeam[p.team_id] ??= []).push({ lat: p.lat, lng: p.lng, speed: p.speed, accuracy: p.accuracy, t: new Date(p.created_at).getTime() });
   }
-  for (const k of Object.keys(teamTrails)) {
-    const pk = teamTrails[k].peakKmh;
-    if (pk != null) teamTrails[k].peakKmh = Math.round(pk);
+  for (const [teamId, arr] of Object.entries(posByTeam)) {
+    let peak: number | null = null;
+    for (const p of arr) if (p.speed != null) { const k = p.speed * 3.6; if (peak == null || k > peak) peak = k; }
+    const last = arr[arr.length - 1];
+    // stationary: walk back while still within 40 m of the latest fix
+    let clusterStart = last.t;
+    for (let i = arr.length - 2; i >= 0; i--) {
+      if (haversine({ lat: arr[i].lat, lng: arr[i].lng }, { lat: last.lat, lng: last.lng }) <= 40) clusterStart = arr[i].t;
+      else break;
+    }
+    // recent pace over the last ~2 min from breadcrumb distance
+    const cutoff = last.t - 120000;
+    let dist = 0, firstIdx = arr.length - 1;
+    for (let i = arr.length - 1; i > 0 && arr[i].t >= cutoff; i--) { dist += haversine({ lat: arr[i - 1].lat, lng: arr[i - 1].lng }, { lat: arr[i].lat, lng: arr[i].lng }); firstIdx = i - 1; }
+    const dtSec = (last.t - arr[firstIdx].t) / 1000;
+    teamTrails[teamId] = {
+      path: arr.map((p) => [p.lat, p.lng] as [number, number]),
+      peakKmh: peak != null ? Math.round(peak) : null,
+      lastAcc: last.accuracy != null ? Math.round(last.accuracy) : null,
+      idleMin: Math.round((last.t - clusterStart) / 60000),
+      recentKmh: dtSec > 15 ? Math.round((dist / dtSec) * 3.6) : null,
+    };
   }
 
   return (

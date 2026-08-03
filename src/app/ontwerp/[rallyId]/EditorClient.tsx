@@ -44,6 +44,7 @@ import {
   updatePoint,
   updateRallyBranding,
   updateRallySpeedLimit,
+  updateRallyIdleLimit,
 } from "@/lib/designer/actions";
 import { logout } from "@/lib/auth/actions";
 
@@ -90,7 +91,7 @@ type LiveTeam = {
 };
 type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; isVideo: boolean; when: string };
 type LegSpeed = { from: string; to: string; kmh: number; limit: number; over: boolean };
-type TeamTrail = { path: [number, number][]; peakKmh: number | null; lastAcc: number | null };
+type TeamTrail = { path: [number, number][]; peakKmh: number | null; lastAcc: number | null; idleMin: number | null; recentKmh: number | null };
 type Sel = { kind: "point" | "leg"; id: string } | null;
 
 export default function EditorClient({
@@ -537,7 +538,9 @@ export default function EditorClient({
           speeds={teamSpeeds}
           trails={teamTrails}
           defaultLimit={rally.speed_limit}
+          idleLimit={rally.idle_limit}
           onSetLimit={(v) => run(() => updateRallySpeedLimit(rally.id, v))}
+          onSetIdleLimit={(v) => run(() => updateRallyIdleLimit(rally.id, v))}
           onDeleteTeam={(id) => run(() => deleteTeam(rally.id, id))}
           onClearTeams={() => run(() => clearTeams(rally.id))}
           labelOf={labelOf}
@@ -1406,7 +1409,9 @@ function LiveView({
   speeds,
   trails,
   defaultLimit,
+  idleLimit,
   onSetLimit,
+  onSetIdleLimit,
   onDeleteTeam,
   onClearTeams,
   labelOf,
@@ -1419,7 +1424,9 @@ function LiveView({
   speeds: Record<string, LegSpeed[]>;
   trails: Record<string, TeamTrail>;
   defaultLimit: number | null;
+  idleLimit: number | null;
   onSetLimit: (v: number | null) => void;
+  onSetIdleLimit: (v: number | null) => void;
   onDeleteTeam: (teamId: string) => void;
   onClearTeams: () => void;
   labelOf: (p: Point) => string;
@@ -1443,18 +1450,24 @@ function LiveView({
     .filter((tr) => tr.path.length >= 2 && (!openTeam || tr.id === openTeam))
     .map(({ color, path }) => ({ color, path }));
 
-  // Live status per team: underway / finished / not started, plus an off-course
-  // flag when they're far from — or heading away from — their next point, and a
-  // "no recent gps" flag. Fuels the dashboard summary and per-team warnings.
-  function teamStatus(t: LiveTeam): { state: "onderweg" | "finished" | "waiting"; offCourse: boolean; reason: string; noGps: boolean } {
+  // Live status per team: underway / finished / not started, plus flags for
+  // off-course (far from — or heading away from — their next point), no recent
+  // gps, being stationary too long, and an ETA to the next point.
+  type Stat = { state: "onderweg" | "finished" | "waiting"; offCourse: boolean; reason: string; noGps: boolean; idle: boolean; idleMin: number | null; etaMin: number | null; leader: boolean; laggard: boolean };
+  function teamStatus(t: LiveTeam): Stat {
     const here = t.last_lat != null && t.last_lng != null ? { lat: t.last_lat, lng: t.last_lng } : null;
-    if (t.finished) return { state: "finished", offCourse: false, reason: "", noGps: false };
-    if (t.current_index <= 0 && !here) return { state: "waiting", offCourse: false, reason: "", noGps: false };
+    const base = { leader: false, laggard: false };
+    if (t.finished) return { state: "finished", offCourse: false, reason: "", noGps: false, idle: false, idleMin: null, etaMin: null, ...base };
+    if (t.current_index <= 0 && !here) return { state: "waiting", offCourse: false, reason: "", noGps: false, idle: false, idleMin: null, etaMin: null, ...base };
     const noGps = t.last_gps_at ? (Date.now() - new Date(t.last_gps_at).getTime()) / 60000 > 15 : false;
-    let offCourse = false, reason = "";
+    const idleMin = trails[t.id]?.idleMin ?? null;
+    const idle = idleLimit != null && idleLimit > 0 && idleMin != null && idleMin >= idleLimit && !noGps;
+    let offCourse = false, reason = "", etaMin: number | null = null;
     const next = points[Math.min(t.current_index + 1, points.length - 1)];
     if (here && next?.lat != null && next?.lng != null) {
       const dist = haversine(here, { lat: next.lat, lng: next.lng });
+      const recent = trails[t.id]?.recentKmh ?? null;
+      if (recent != null && recent > 4) etaMin = Math.max(1, Math.round((dist / 1000 / recent) * 60));
       const path = trails[t.id]?.path ?? [];
       if (dist > 2500) {
         offCourse = true;
@@ -1472,14 +1485,52 @@ function LiveView({
         }
       }
     }
-    return { state: "onderweg", offCourse, reason, noGps };
+    return { state: "onderweg", offCourse, reason, noGps, idle, idleMin, etaMin, ...base };
   }
   const statById = new Map(teams.map((t) => [t.id, teamStatus(t)]));
-  const nOnderweg = teams.filter((t) => statById.get(t.id)?.state === "onderweg").length;
+  // Leader / laggard by progress among teams still underway.
+  const underway = teams.filter((t) => statById.get(t.id)?.state === "onderweg");
+  if (underway.length >= 2) {
+    const idxs = underway.map((t) => t.current_index);
+    const max = Math.max(...idxs), min = Math.min(...idxs);
+    if (max > min) {
+      for (const t of underway) {
+        const s = statById.get(t.id)!;
+        if (t.current_index === max) s.leader = true;
+        if (t.current_index === min) s.laggard = true;
+      }
+    }
+  }
+  const nOnderweg = underway.length;
   const nFinished = teams.filter((t) => statById.get(t.id)?.state === "finished").length;
   const nWaiting = teams.filter((t) => statById.get(t.id)?.state === "waiting").length;
   const nOff = teams.filter((t) => statById.get(t.id)?.offCourse).length;
   const nNoGps = teams.filter((t) => statById.get(t.id)?.state === "onderweg" && statById.get(t.id)?.noGps).length;
+  const nIdle = teams.filter((t) => statById.get(t.id)?.idle).length;
+
+  // Push-style notifications when a team newly goes off-course (or loses gps).
+  const notifiedRef = useRef<Set<string>>(new Set());
+  const [notifyOn, setNotifyOn] = useState(false);
+  useEffect(() => {
+    if (!notifyOn) return;
+    for (const t of teams) {
+      const s = statById.get(t.id);
+      const key = s?.offCourse ? `off:${t.id}` : s?.noGps && s.state === "onderweg" ? `gps:${t.id}` : null;
+      if (!key) continue;
+      if (notifiedRef.current.has(key)) continue;
+      notifiedRef.current.add(key);
+      const msg = s?.offCourse ? `${t.name}: 🧭 ${s.reason}` : `${t.name}: 📡 geen recente gps`;
+      try {
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Rally — let op", { body: msg });
+      } catch {}
+    }
+    // clear the flag for teams that recovered, so they can alert again later
+    for (const t of teams) {
+      const s = statById.get(t.id);
+      if (!s?.offCourse) notifiedRef.current.delete(`off:${t.id}`);
+      if (!(s?.noGps && s.state === "onderweg")) notifiedRef.current.delete(`gps:${t.id}`);
+    }
+  });
 
   // Realtime: refresh team positions/scores as team_scores changes.
   useEffect(() => {
@@ -1542,6 +1593,29 @@ function LiveView({
               />
               km/u
             </label>
+            <label className="flex items-center gap-1.5 rounded-soft bg-paper px-2 py-1 text-xs text-polder-grey" title="Waarschuw als een team langer dan dit stilstaat. Leeg = uit.">
+              🛑 Stilstaan
+              <input
+                type="number"
+                min={1}
+                defaultValue={idleLimit ?? ""}
+                placeholder="uit"
+                className="input w-14 px-1.5 py-0.5 text-center text-xs"
+                onBlur={(e) => { const v = e.target.value.trim(); onSetIdleLimit(v === "" ? null : Number(v)); }}
+              />
+              min
+            </label>
+            <button
+              className={`btn text-sm ${notifyOn ? "btn-teal" : "btn-ghost"}`}
+              title="Meldingen (browser) als een team uit koers raakt of z'n gps verliest."
+              onClick={async () => {
+                if (typeof Notification === "undefined") return;
+                if (Notification.permission !== "granted") { const p = await Notification.requestPermission(); if (p !== "granted") return; }
+                setNotifyOn((v) => !v);
+              }}
+            >
+              {notifyOn ? "🔔 Meldingen aan" : "🔕 Meldingen"}
+            </button>
             <Link href={`/ontwerp/${rallyId}/review`} className="btn btn-ghost text-sm">🔎 Nakijken</Link>
             <button className="btn btn-ghost text-sm" onClick={onRefresh}>🔄 Ververs</button>
           </div>
@@ -1560,11 +1634,12 @@ function LiveView({
           ) : null}
         </div>
         {teams.length ? (
-          <div className="mb-2.5 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+          <div className="mb-2.5 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
             <div className="rounded-soft bg-teal-light p-2 text-center"><div className="text-lg font-extrabold text-teal-dark">{nOnderweg}</div><div className="text-[10px] font-bold uppercase text-teal-dark">onderweg</div></div>
             <div className="rounded-soft bg-paper p-2 text-center"><div className="text-lg font-extrabold text-ink">{nFinished}</div><div className="text-[10px] font-bold uppercase text-polder-grey">gefinisht</div></div>
-            <div className="rounded-soft bg-paper p-2 text-center"><div className="text-lg font-extrabold text-ink">{nWaiting}</div><div className="text-[10px] font-bold uppercase text-polder-grey">nog niet gestart</div></div>
+            <div className="rounded-soft bg-paper p-2 text-center"><div className="text-lg font-extrabold text-ink">{nWaiting}</div><div className="text-[10px] font-bold uppercase text-polder-grey">niet gestart</div></div>
             <div className={`rounded-soft p-2 text-center ${nOff ? "bg-coral-light" : "bg-paper"}`}><div className={`text-lg font-extrabold ${nOff ? "text-coral" : "text-ink"}`}>{nOff}</div><div className={`text-[10px] font-bold uppercase ${nOff ? "text-coral" : "text-polder-grey"}`}>uit koers</div></div>
+            <div className={`rounded-soft p-2 text-center ${nIdle ? "bg-coral-light" : "bg-paper"}`}><div className={`text-lg font-extrabold ${nIdle ? "text-coral" : "text-ink"}`}>{nIdle}</div><div className={`text-[10px] font-bold uppercase ${nIdle ? "text-coral" : "text-polder-grey"}`}>stilstaan</div></div>
             <div className={`rounded-soft p-2 text-center ${nNoGps ? "bg-coral-light" : "bg-paper"}`}><div className={`text-lg font-extrabold ${nNoGps ? "text-coral" : "text-ink"}`}>{nNoGps}</div><div className={`text-[10px] font-bold uppercase ${nNoGps ? "text-coral" : "text-polder-grey"}`}>geen gps</div></div>
           </div>
         ) : null}
@@ -1586,7 +1661,10 @@ function LiveView({
                     <div className="flex flex-wrap items-center gap-2 font-bold">
                       <span className="inline-block h-3 w-3 rounded-full" style={{ background: TEAM_COLORS[i % TEAM_COLORS.length] }} />
                       {t.name}
+                      {st?.leader ? <span className="rounded-full bg-teal-light px-1.5 py-0.5 text-[11px] font-bold text-teal-dark" title="Ligt voorop qua voortgang">🏃 kopgroep</span> : null}
+                      {st?.laggard ? <span className="rounded-full bg-paper px-1.5 py-0.5 text-[11px] font-bold text-polder-grey" title="Ligt achterop qua voortgang">🐢 achterblijver</span> : null}
                       {st?.offCourse ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]" title={st.reason}>🧭 uit koers</span> : null}
+                      {st?.idle ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]" title="Staat langer stil dan de ingestelde grens">🛑 {st.idleMin} min stil</span> : null}
                       {st?.state === "onderweg" && st.noGps ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]">📡 geen gps</span> : null}
                       {speeding.length ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]">⚠️ {speeding.length}×</span> : null}
                       {peak != null ? <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${peakOver ? "bg-[#FDECE7] text-[#D85A30]" : "bg-teal-light text-teal-dark"}`}>🏎️ {peak} km/u</span> : null}
@@ -1596,6 +1674,7 @@ function LiveView({
                     </div>
                     <small className="mt-1 block text-xs text-polder-grey">
                       {t.finished ? "🏁 Gefinisht" : `Onderweg · punt ${t.current_index}`} · {t.hints} hint{t.hints === 1 ? "" : "s"} · {items.length} antwoord{items.length === 1 ? "" : "en"} · {t.last_gps_at ? `📍 gps ${gpsAge(t.last_gps_at)}` : "📍 geen gps"}
+                      {st?.etaMin != null ? ` · ⏱️ ~${st.etaMin} min tot volgend punt` : ""}
                       {st?.offCourse ? <span className="font-semibold text-coral"> · 🧭 {st.reason}</span> : null}
                     </small>
                     <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-polder-line">

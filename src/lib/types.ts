@@ -9,6 +9,7 @@ export interface Rally {
   join_code: string;
   published: boolean;
   speed_limit: number | null; // rally-wide default speed warning threshold (km/h)
+  idle_limit: number | null; // minutes stationary before a team is flagged (live view)
   brand_color: string | null; // primary brand color (hex) for the player app
   brand_color2: string | null; // secondary/accent brand color (hex)
   brand_logo: string | null; // logo URL shown in the player header
