@@ -471,6 +471,7 @@ export async function updateLeg(
 // `route-photos` bucket. Only the rally owner may request one.
 export async function createRoutePhotoUpload(
   rallyId: string,
+  ext = "jpg",
 ): Promise<{ ok: boolean; bucket?: string; path?: string; token?: string; publicUrl?: string; error?: string }> {
   const db = await createClient();
   const user = await requireUser(db);
@@ -479,7 +480,8 @@ export async function createRoutePhotoUpload(
 
   const admin = createAdminClient();
   const bucket = "route-photos";
-  const path = `${rallyId}/${crypto.randomUUID()}.jpg`;
+  const safeExt = ext === "png" ? "png" : "jpg";
+  const path = `${rallyId}/${crypto.randomUUID()}.${safeExt}`;
   const { data, error } = await admin.storage.from(bucket).createSignedUploadUrl(path);
   if (error || !data) return { ok: false, error: "Kon upload niet voorbereiden." };
   const publicUrl = admin.storage.from(bucket).getPublicUrl(path).data.publicUrl;

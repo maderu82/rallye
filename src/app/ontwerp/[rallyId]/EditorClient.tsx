@@ -23,7 +23,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, roadbookDirsFromGeom } from "@/lib/geo";
+import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, roadbookDirsFromGeom } from "@/lib/geo";
 import {
   addLeg,
   addPoint,
@@ -328,6 +328,8 @@ export default function EditorClient({
       {pending ? <p className="mb-2 text-xs text-polder-grey">Bezig met opslaan…</p> : null}
 
       {tab === "build" ? (
+        <>
+        <NavOverview legs={legs} />
         <div className="grid items-start gap-4 lg:grid-cols-[290px_1fr_330px]">
           {/* list */}
           <div className="card">
@@ -516,6 +518,7 @@ export default function EditorClient({
             </div>
           </div>
         </div>
+        </>
       ) : (
         <LiveView
           rallyId={rally.id}
@@ -675,11 +678,13 @@ function BrandLogo({ rally, run }: { rally: Rally; run: (fn: () => Promise<unkno
   async function upload(file: File) {
     setBusy(true);
     try {
-      const blob = await downscaleImg(file, 400, 0.9);
-      const prep = await createRoutePhotoUpload(rally.id);
+      // Keep the logo as PNG so transparency is preserved (JPEG would fill
+      // transparent areas with black).
+      const blob = await downscaleImg(file, 400, 0.9, "image/png");
+      const prep = await createRoutePhotoUpload(rally.id, "png");
       if (!prep.ok || !prep.bucket || !prep.path || !prep.token || !prep.publicUrl) return;
       const supabase = createClient();
-      const { error } = await supabase.storage.from(prep.bucket).uploadToSignedUrl(prep.path, prep.token, blob, { contentType: "image/jpeg" });
+      const { error } = await supabase.storage.from(prep.bucket).uploadToSignedUrl(prep.path, prep.token, blob, { contentType: "image/png" });
       if (!error) run(() => updateRallyBranding(rally.id, { brand_logo: prep.publicUrl }));
     } finally {
       setBusy(false);
@@ -972,7 +977,7 @@ const RB_CONFIG: Record<RbVariant, {
 };
 
 // Downscale an organizer photo before upload to keep route-photos small.
-async function downscaleImg(file: File, maxDim = 1400, quality = 0.8): Promise<Blob> {
+async function downscaleImg(file: File, maxDim = 1400, quality = 0.8, type: "image/jpeg" | "image/png" = "image/jpeg"): Promise<Blob> {
   try {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
@@ -982,7 +987,7 @@ async function downscaleImg(file: File, maxDim = 1400, quality = 0.8): Promise<B
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", quality));
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, type, quality));
     return blob ?? file;
   } catch {
     return file;
@@ -1346,6 +1351,36 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   );
 }
 
+// ── navigation overview (route ontwerpen) ───────────────────────────────────
+// A quick dashboard of which navigation styles the puzzle uses, so the designer
+// sees the mix at a glance and can vary it.
+function NavOverview({ legs }: { legs: Leg[] }) {
+  const counts = new Map<string, number>();
+  for (const l of legs) counts.set(l.nav_mode, (counts.get(l.nav_mode) ?? 0) + 1);
+  const entries = NAV_MODES.filter((n) => counts.has(n.mode));
+  return (
+    <div className="card mb-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-teal-dark">Navigatie-mix</h3>
+        <span className="text-xs text-polder-grey">{legs.length} traject{legs.length === 1 ? "" : "en"} · {entries.length} soort{entries.length === 1 ? "" : "en"} navigatie</span>
+      </div>
+      {entries.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {entries.map((n) => (
+            <span key={n.mode} className="flex items-center gap-1.5 rounded-full border-2 border-polder-line bg-paper px-2.5 py-1 text-[13px]">
+              <span>{n.icon}</span>
+              <span className="font-semibold text-ink">{n.label.split(" (")[0].split(" — ")[0]}</span>
+              <span className="rounded-full bg-teal-light px-1.5 text-[11px] font-bold text-teal-dark">{counts.get(n.mode)}</span>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-[13px] text-polder-grey">Nog geen trajecten met een navigatiewijze. Voeg punten toe en kies per traject een navigatievorm.</p>
+      )}
+    </div>
+  );
+}
+
 // ── live view (teams volgen) ─────────────────────────────────────────────────
 // 12 visually distinct colors so up to ~12 teams each get their own.
 const TEAM_COLORS = [
@@ -1398,6 +1433,44 @@ function LiveView({
     .map((t, i) => ({ id: t.id, color: TEAM_COLORS[i % TEAM_COLORS.length], path: trails[t.id]?.path ?? [] }))
     .filter((tr) => tr.path.length >= 2 && (!openTeam || tr.id === openTeam))
     .map(({ color, path }) => ({ color, path }));
+
+  // Live status per team: underway / finished / not started, plus an off-course
+  // flag when they're far from — or heading away from — their next point, and a
+  // "no recent gps" flag. Fuels the dashboard summary and per-team warnings.
+  function teamStatus(t: LiveTeam): { state: "onderweg" | "finished" | "waiting"; offCourse: boolean; reason: string; noGps: boolean } {
+    const here = t.last_lat != null && t.last_lng != null ? { lat: t.last_lat, lng: t.last_lng } : null;
+    if (t.finished) return { state: "finished", offCourse: false, reason: "", noGps: false };
+    if (t.current_index <= 0 && !here) return { state: "waiting", offCourse: false, reason: "", noGps: false };
+    const noGps = t.last_gps_at ? (Date.now() - new Date(t.last_gps_at).getTime()) / 60000 > 15 : false;
+    let offCourse = false, reason = "";
+    const next = points[Math.min(t.current_index + 1, points.length - 1)];
+    if (here && next?.lat != null && next?.lng != null) {
+      const dist = haversine(here, { lat: next.lat, lng: next.lng });
+      const path = trails[t.id]?.path ?? [];
+      if (dist > 2500) {
+        offCourse = true;
+        reason = `${(dist / 1000).toFixed(1)} km van punt ${labelOf(next)}`;
+      } else if (path.length >= 2 && dist > 500) {
+        const prev = path[path.length - 2], last = path[path.length - 1];
+        const moved = haversine({ lat: prev[0], lng: prev[1] }, { lat: last[0], lng: last[1] });
+        if (moved > 30) {
+          const head = bearing({ lat: prev[0], lng: prev[1] }, { lat: last[0], lng: last[1] });
+          const tgt = bearing({ lat: last[0], lng: last[1] }, { lat: next.lat, lng: next.lng });
+          if (Math.abs(((head - tgt + 540) % 360) - 180) > 110) {
+            offCourse = true;
+            reason = `lijkt weg van punt ${labelOf(next)} te rijden`;
+          }
+        }
+      }
+    }
+    return { state: "onderweg", offCourse, reason, noGps };
+  }
+  const statById = new Map(teams.map((t) => [t.id, teamStatus(t)]));
+  const nOnderweg = teams.filter((t) => statById.get(t.id)?.state === "onderweg").length;
+  const nFinished = teams.filter((t) => statById.get(t.id)?.state === "finished").length;
+  const nWaiting = teams.filter((t) => statById.get(t.id)?.state === "waiting").length;
+  const nOff = teams.filter((t) => statById.get(t.id)?.offCourse).length;
+  const nNoGps = teams.filter((t) => statById.get(t.id)?.state === "onderweg" && statById.get(t.id)?.noGps).length;
 
   // Realtime: refresh team positions/scores as team_scores changes.
   useEffect(() => {
@@ -1477,6 +1550,15 @@ function LiveView({
             </button>
           ) : null}
         </div>
+        {teams.length ? (
+          <div className="mb-2.5 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+            <div className="rounded-soft bg-teal-light p-2 text-center"><div className="text-lg font-extrabold text-teal-dark">{nOnderweg}</div><div className="text-[10px] font-bold uppercase text-teal-dark">onderweg</div></div>
+            <div className="rounded-soft bg-paper p-2 text-center"><div className="text-lg font-extrabold text-ink">{nFinished}</div><div className="text-[10px] font-bold uppercase text-polder-grey">gefinisht</div></div>
+            <div className="rounded-soft bg-paper p-2 text-center"><div className="text-lg font-extrabold text-ink">{nWaiting}</div><div className="text-[10px] font-bold uppercase text-polder-grey">nog niet gestart</div></div>
+            <div className={`rounded-soft p-2 text-center ${nOff ? "bg-coral-light" : "bg-paper"}`}><div className={`text-lg font-extrabold ${nOff ? "text-coral" : "text-ink"}`}>{nOff}</div><div className={`text-[10px] font-bold uppercase ${nOff ? "text-coral" : "text-polder-grey"}`}>uit koers</div></div>
+            <div className={`rounded-soft p-2 text-center ${nNoGps ? "bg-coral-light" : "bg-paper"}`}><div className={`text-lg font-extrabold ${nNoGps ? "text-coral" : "text-ink"}`}>{nNoGps}</div><div className={`text-[10px] font-bold uppercase ${nNoGps ? "text-coral" : "text-polder-grey"}`}>geen gps</div></div>
+          </div>
+        ) : null}
         <p className="mb-2.5 text-xs text-polder-grey">Klik een team open om hun antwoorden en foto&apos;s te zien.</p>
         {teams.length ? (
           <div className="space-y-2">
@@ -1487,13 +1569,16 @@ function LiveView({
               const peak = trails[t.id]?.peakKmh ?? null;
               const peakOver = peak != null && defaultLimit != null && peak > defaultLimit;
               const coarseGps = (trails[t.id]?.lastAcc ?? 0) > 150;
+              const st = statById.get(t.id);
               const open = openTeam === t.id;
               return (
-                <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${speeding.length ? "border-[#D85A30]" : t.finished ? "border-coral" : "border-teal"}`}>
+                <div key={t.id} className={`rounded-soft border-l-4 bg-white p-3 ${st?.offCourse || speeding.length ? "border-[#D85A30]" : t.finished ? "border-coral" : "border-teal"}`}>
                   <button className="w-full text-left" onClick={() => setOpenTeam(open ? null : t.id)}>
-                    <div className="flex items-center gap-2 font-bold">
+                    <div className="flex flex-wrap items-center gap-2 font-bold">
                       <span className="inline-block h-3 w-3 rounded-full" style={{ background: TEAM_COLORS[i % TEAM_COLORS.length] }} />
                       {t.name}
+                      {st?.offCourse ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]" title={st.reason}>🧭 uit koers</span> : null}
+                      {st?.state === "onderweg" && st.noGps ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]">📡 geen gps</span> : null}
                       {speeding.length ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]">⚠️ {speeding.length}×</span> : null}
                       {peak != null ? <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${peakOver ? "bg-[#FDECE7] text-[#D85A30]" : "bg-teal-light text-teal-dark"}`}>🏎️ {peak} km/u</span> : null}
                       {coarseGps ? <span className="rounded-full bg-[#FDECE7] px-1.5 py-0.5 text-[11px] font-bold text-[#D85A30]" title="Deze telefoon deelt een grove locatie — vraag ze nauwkeurige locatie aan te zetten.">📡 grove gps</span> : null}
@@ -1502,6 +1587,7 @@ function LiveView({
                     </div>
                     <small className="mt-1 block text-xs text-polder-grey">
                       {t.finished ? "🏁 Gefinisht" : `Onderweg · punt ${t.current_index}`} · {t.hints} hint{t.hints === 1 ? "" : "s"} · {items.length} antwoord{items.length === 1 ? "" : "en"} · {t.last_gps_at ? `📍 gps ${gpsAge(t.last_gps_at)}` : "📍 geen gps"}
+                      {st?.offCourse ? <span className="font-semibold text-coral"> · 🧭 {st.reason}</span> : null}
                     </small>
                     <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-polder-line">
                       <i className="block h-full rounded" style={{ width: `${Math.round(Math.min(1, t.current_index / maxIndex) * 100)}%`, background: t.finished ? "#D85A30" : "#1D9E75" }} />
