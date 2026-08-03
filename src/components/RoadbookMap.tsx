@@ -77,6 +77,15 @@ export default function RoadbookMap({
     if (containerRef.current) containerRef.current.style.cursor = addMode ? "crosshair" : "";
   }, [addMode]);
 
+  // When the container is resized (e.g. entering/leaving full-screen edit),
+  // Leaflet must be told or it keeps the old size and loads tiles slowly.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const t = setTimeout(() => map.invalidateSize(), 60);
+    return () => clearTimeout(t);
+  }, [height]);
+
   useEffect(() => {
     const map = mapRef.current;
     const layer = layerRef.current;

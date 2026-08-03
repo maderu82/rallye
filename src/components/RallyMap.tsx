@@ -115,6 +115,15 @@ export default function RallyMap({
     }
   }, [addMode]);
 
+  // Tell Leaflet when the container is resized (e.g. full-screen view) so it
+  // recalculates and loads the right tiles immediately.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const t = setTimeout(() => map.invalidateSize(), 60);
+    return () => clearTimeout(t);
+  }, [height]);
+
   // pan/zoom to the selected point (e.g. picked from the list in the editor)
   useEffect(() => {
     const map = mapRef.current;

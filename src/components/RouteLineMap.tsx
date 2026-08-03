@@ -47,6 +47,13 @@ export default function RouteLineMap({ start, end, route, trail, height = 320 }:
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map) return;
+    const t = setTimeout(() => map.invalidateSize(), 60);
+    return () => clearTimeout(t);
+  }, [height]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     const layer = layerRef.current;
     if (!map || !layer) return;
     layer.clearLayers();
