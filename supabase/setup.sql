@@ -84,6 +84,8 @@ create table if not exists public.legs (
   enroute_question text,
   enroute_answer   text,
   enroute_points   int not null default 10,
+  enroute_hint     text,
+  enroute_hint_cost int,
   turn_steps       jsonb not null default '[]'::jsonb,
   turn_points      jsonb not null default '[]'::jsonb,
   turn_route       jsonb not null default '[]'::jsonb,
@@ -97,6 +99,8 @@ create table if not exists public.legs (
 );
 -- add columns to databases created before these fields existed
 alter table public.legs add column if not exists enroute_answer text;
+alter table public.legs add column if not exists enroute_hint text;
+alter table public.legs add column if not exists enroute_hint_cost int;
 alter table public.legs add column if not exists turn_steps jsonb not null default '[]'::jsonb;
 alter table public.legs add column if not exists turn_points jsonb not null default '[]'::jsonb;
 alter table public.legs add column if not exists turn_route jsonb not null default '[]'::jsonb;

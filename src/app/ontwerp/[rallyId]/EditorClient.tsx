@@ -880,11 +880,24 @@ function LegSettings({
             <input type="number" min={0} defaultValue={leg.enroute_points} className="input" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { enroute_points: Number(e.target.value) }))} />
           </div>
           {leg.enroute_points > 0 ? (
-            <div>
-              <label className="field-label">Juist antwoord (nodig om te controleren)</label>
-              <input defaultValue={leg.enroute_answer ?? ""} className="input" placeholder="bijv. 4" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { enroute_answer: e.target.value }))} />
-              <p className="mt-1 text-xs text-polder-grey">De app controleert het antwoord automatisch en kent de punten toe.</p>
-            </div>
+            <>
+              <div>
+                <label className="field-label">Juist antwoord (nodig om te controleren)</label>
+                <input defaultValue={leg.enroute_answer ?? ""} className="input" placeholder="bijv. 4" onBlur={(e) => run(() => updateLeg(rallyId, leg.id, { enroute_answer: e.target.value }))} />
+                <p className="mt-1 text-xs text-polder-grey">De app controleert het antwoord automatisch en kent de punten toe.</p>
+              </div>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <div>
+                  <label className="field-label">Hint (optioneel)</label>
+                  <input defaultValue={leg.enroute_hint ?? ""} className="input" placeholder="bijv. 'tel alleen de rode deuren'" onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { enroute_hint: v === "" ? null : v })); }} />
+                </div>
+                <div>
+                  <label className="field-label">Kosten (ptn)</label>
+                  <input type="number" min={0} defaultValue={leg.enroute_hint_cost ?? 0} className="input w-20" onBlur={(e) => { const v = e.target.value.trim(); run(() => updateLeg(rallyId, leg.id, { enroute_hint_cost: v === "" ? null : Number(v) })); }} />
+                </div>
+                <p className="col-span-2 text-xs text-polder-grey">Laat leeg voor geen hint. De speler kan de hint onderweg opvragen; 0 kosten = gratis.</p>
+              </div>
+            </>
           ) : (
             <p className="rounded-soft bg-purple-light p-2 text-xs font-semibold text-purple">
               💚 0 punten = kennismakingsvraag. Er is geen goed of fout — teams delen gewoon hun antwoord om elkaar beter te leren kennen.

@@ -65,6 +65,8 @@ export interface Leg {
   enroute_question: string | null;
   enroute_answer: string | null; // server-only; stripped before reaching the browser
   enroute_points: number;
+  enroute_hint: string | null; // optional hint for a graded en-route question
+  enroute_hint_cost: number | null; // points deducted when the hint is used; null/0 = free
   turn_steps: RoadbookStep[];
   turn_points: { lat: number; lng: number }[];
   turn_route: [number, number][];

@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, DANGER_LABEL, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
-import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, scoreRoute, submitAnswer, submitAnswerWithPhoto, submitMedia, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, scoreRoute, submitAnswer, submitAnswerWithPhoto, submitMedia, useEnrouteHint, useHint } from "@/lib/play/actions";
 import { NEXT_STEP_COST } from "@/lib/play/constants";
 import TulipGlyph from "@/components/TulipGlyph";
 import RoadArrowGlyph from "@/components/RoadArrowGlyph";
@@ -1414,7 +1414,10 @@ function EnrouteQuestion({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const social = leg.enroute_points <= 0;
+  const hintCost = leg.enroute_hint_cost ?? 0;
+  const done = answered || feedback?.ok;
 
   async function submit() {
     setBusy(true);
@@ -1424,6 +1427,15 @@ function EnrouteQuestion({
     setFeedback({ ok: r.ok, msg: r.feedback });
     onScored(r.score);
     if (r.complete) onAnswered();
+  }
+
+  async function getHint() {
+    setBusy(true);
+    const r = await useEnrouteHint(leg.id);
+    setBusy(false);
+    if (!r.ok) return toast(r.error ?? "Geen hint beschikbaar.");
+    setHint(r.hintText ?? "");
+    onScored(r.score);
   }
 
   return (
@@ -1441,8 +1453,10 @@ function EnrouteQuestion({
       </div>
       <p className="mb-2 text-sm font-semibold">{leg.enroute_question}</p>
 
-      {answered || feedback?.ok ? (
-        <div className={social ? "feedback-ok" : "feedback-ok"}>
+      {hint ? <div className="mb-2 rounded-soft bg-teal-light p-2 text-[13px] text-teal-dark">💡 {hint}</div> : null}
+
+      {done ? (
+        <div className="feedback-ok">
           {social ? "💚 Bedankt voor het delen!" : "✅ Beantwoord!"}
         </div>
       ) : (
@@ -1457,6 +1471,11 @@ function EnrouteQuestion({
           <button className="btn btn-purple w-full" disabled={busy || (social && !text.trim())} onClick={submit}>
             {social ? "Delen 💚" : "Antwoord indienen"}
           </button>
+          {!social && leg.enroute_hint && !hint ? (
+            <button className="btn btn-ghost w-full text-sm" disabled={busy} onClick={getHint}>
+              💡 Hint{hintCost > 0 ? ` (−${hintCost} ptn)` : " (gratis)"}
+            </button>
+          ) : null}
         </div>
       )}
     </div>

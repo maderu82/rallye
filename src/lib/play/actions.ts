@@ -645,6 +645,44 @@ export async function answerEnroute(
   return { ok: true, complete: true, feedback: `✅ Goed! +${pts} punten.`, score: await scoreOf(db, team.id) };
 }
 
+// ── en-route question hint (optional, may cost points) ───────────────────────
+export async function useEnrouteHint(
+  legId: string,
+): Promise<{ ok: boolean; score: number; hintText?: string; error?: string }> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, score: 0, error: "Geen actief team." };
+  const { team, db } = ctx;
+
+  const { data: leg } = await db.from("legs").select("*").eq("id", legId).maybeSingle();
+  if (!leg || leg.rally_id !== team.rally_id || !leg.enroute_enabled || !leg.enroute_hint) {
+    return { ok: false, score: await scoreOf(db, team.id), error: "Geen hint beschikbaar." };
+  }
+
+  // Charge only the first time this leg's hint is used.
+  const { data: prev } = await db
+    .from("team_events")
+    .select("id,detail")
+    .eq("team_id", team.id)
+    .eq("kind", "hint");
+  const already = (prev ?? []).some((e) => {
+    const d = e.detail as { leg_id?: string; enroute?: boolean } | null;
+    return d?.enroute === true && d?.leg_id === legId;
+  });
+  if (!already) {
+    const cost = leg.enroute_hint_cost != null && leg.enroute_hint_cost > 0 ? leg.enroute_hint_cost : 0;
+    await db.from("team_events").insert({
+      team_id: team.id,
+      rally_id: team.rally_id,
+      kind: "hint",
+      points_delta: -cost,
+      is_hint: true,
+      detail: { leg_id: legId, enroute: true },
+    });
+  }
+
+  return { ok: true, score: await scoreOf(db, team.id), hintText: String(leg.enroute_hint) };
+}
+
 // ── finish ────────────────────────────────────────────────────────────────────
 export async function finishRally(): Promise<{ ok: boolean }> {
   const ctx = await currentTeam();

@@ -448,6 +448,8 @@ export async function updateLeg(
     enroute_question: string;
     enroute_answer: string;
     enroute_points: number;
+    enroute_hint: string | null;
+    enroute_hint_cost: number | null;
     turn_steps: { dist: number; dir: string; note: string; photo?: string; radius?: number; roads?: number[]; take?: number; picto?: string; danger?: number }[];
     turn_points: { lat: number; lng: number }[];
     turn_route: [number, number][];
