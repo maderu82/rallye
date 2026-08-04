@@ -90,6 +90,7 @@ export interface RoadbookStep {
   take?: number; // tulip: screen angle of the road to take
   picto?: string; // roadbook (Dakar): landmark pictogram id at this point
   danger?: number; // roadbook (Dakar): warning level 0=none, 1=let op, 2=gevaar
+  street?: string; // routebook: name of the road turned onto here (from the map)
 }
 
 export interface Team {

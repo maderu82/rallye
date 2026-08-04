@@ -22,6 +22,24 @@ export interface Junction {
   take: number; // screen angle of the road to take
 }
 
+/** Build a Dutch routebook instruction from a direction + the road turned onto. */
+export function routebookPhrase(dir: string, street: string | null): string {
+  const road = street ? street.trim() : "";
+  switch (dir) {
+    case "straight": return road ? `Ga rechtdoor op de ${road}` : "Ga rechtdoor";
+    case "slight_left": return road ? `Houd links aan, de ${road} op` : "Houd links aan";
+    case "slight_right": return road ? `Houd rechts aan, de ${road} op` : "Houd rechts aan";
+    case "left": return road ? `Sla linksaf, de ${road} in` : "Sla linksaf";
+    case "right": return road ? `Sla rechtsaf, de ${road} in` : "Sla rechtsaf";
+    case "sharp_left": return road ? `Scherp linksaf, de ${road} in` : "Scherp linksaf";
+    case "sharp_right": return road ? `Scherp rechtsaf, de ${road} in` : "Scherp rechtsaf";
+    case "uturn": return "Keer om";
+    case "roundabout": return road ? `Op de rotonde de ${road} op` : "Neem de rotonde";
+    case "arrive": return "Je bent op de bestemming";
+    default: return road ? `Volg de ${road}` : "";
+  }
+}
+
 /** Roadbook direction id from a tulip take-angle (0 = straight ahead, 90 = right). */
 export function dirFromTakeAngle(take: number): string {
   const a = (((take % 360) + 360) % 360); // 0..360
@@ -37,7 +55,7 @@ export function dirFromTakeAngle(take: number): string {
 
 export async function fetchRoadRoute(
   waypoints: LL[],
-): Promise<{ route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[] } | null> {
+): Promise<{ route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[] } | null> {
   if (waypoints.length < 2) return null;
   // Give up after 7s so a slow/overloaded public OSRM never hangs the editor;
   // callers fall back to straight lines when this returns null.
@@ -55,7 +73,7 @@ export async function fetchRoadRoute(
     if (!r) return null;
     const route = (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
     type RawInter = { location?: [number, number]; bearings?: number[]; in?: number; out?: number };
-    type RawStep = { geometry?: { coordinates: [number, number][] }; intersections?: RawInter[] };
+    type RawStep = { geometry?: { coordinates: [number, number][] }; intersections?: RawInter[]; name?: string };
     const rawLegs = (r.legs ?? []) as { distance: number; steps?: RawStep[] }[];
     const legs = rawLegs.map((l) => Math.round(l.distance));
     const legGeoms: [number, number][][] = rawLegs.map((l) => {
@@ -85,9 +103,15 @@ export async function fetchRoadRoute(
     // OSRM's snapped waypoint locations (used as the search anchor per turn point).
     const snapped = ((data.waypoints ?? []) as { location?: [number, number] }[]).map((w) => w.location);
 
-    // One junction per turn point = waypoints 1..n-2 of the full [start,…,end] list.
+    // One junction per turn point = waypoints 1..n-2 of the full [start,…,end]
+    // list, plus the name of the road the route turns ONTO there (for the
+    // routebook: "sla links af de <straat> in").
     const junctions: (Junction | null)[] = [];
+    const streets: (string | null)[] = [];
     for (let wi = 1; wi < waypoints.length - 1; wi++) {
+      // the road entered after this waypoint = first step of the leg leaving it
+      const nm = rawLegs[wi]?.steps?.find((s) => s.name && s.name.trim())?.name?.trim() || null;
+      streets.push(nm);
       const loc = snapped[wi];
       const target: LL = loc ? { lat: loc[1], lng: loc[0] } : waypoints[wi];
       // Nearest junction within 70 m, preferring real junctions (more roads).
@@ -105,7 +129,7 @@ export async function fetchRoadRoute(
       const rot = (b: number) => Math.round((((b - inB + 180) % 360) + 360) % 360);
       junctions.push({ roads: best.bearings.map(rot), take: rot(best.bearings[best.out]) });
     }
-    return { route, legs, legGeoms, junctions };
+    return { route, legs, legGeoms, junctions, streets };
   } catch {
     return null;
   } finally {

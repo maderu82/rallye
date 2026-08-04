@@ -477,7 +477,7 @@ export async function updateLeg(
     enroute_points: number;
     enroute_hint: string | null;
     enroute_hint_cost: number | null;
-    turn_steps: { dist: number; dir: string; note: string; photo?: string; radius?: number; roads?: number[]; take?: number; picto?: string; danger?: number }[];
+    turn_steps: { dist: number; dir: string; note: string; photo?: string; radius?: number; roads?: number[]; take?: number; picto?: string; danger?: number; street?: string }[];
     turn_points: { lat: number; lng: number }[];
     turn_route: [number, number][];
     speed_limit: number | null;

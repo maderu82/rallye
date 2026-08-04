@@ -23,7 +23,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, roadbookDirsFromGeom } from "@/lib/geo";
+import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, roadbookDirsFromGeom, routebookPhrase } from "@/lib/geo";
 import {
   addLeg,
   addPoint,
@@ -156,17 +156,21 @@ export default function EditorClient({
         };
         const pd = existing[i];
         const jn = road.junctions?.[i];
+        const street = road.streets?.[i] ?? undefined;
         // Recompute is authoritative: re-derive the direction from the actual
         // junction the route takes, so the label matches the highlighted road.
         const dir = jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
+        let note = pd?.note ?? "";
+        if (leg.nav_mode === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null);
         return {
           dist: a.dist,
           dir,
-          note: pd?.note ?? "",
+          note,
           ...(pd?.photo ? { photo: pd.photo } : {}),
           ...(pd?.radius != null ? { radius: pd.radius } : {}),
           ...(pd?.picto ? { picto: pd.picto } : {}),
           ...(pd?.danger ? { danger: pd.danger } : {}),
+          ...(street ? { street } : {}),
           ...(jn ? { roads: jn.roads, take: jn.take } : {}),
         };
       });
@@ -1050,16 +1054,23 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       };
       const pd = perPoint[i];
       const jn = road?.junctions?.[i];
+      const street = road?.streets?.[i] ?? undefined;
       // Newly placed points get the junction-accurate direction; a direction you
       // already chose is preserved (drag/add never overwrites your choice).
       const suggested = jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
+      const dir = pd?.dir ?? suggested;
+      // Routebook: auto-write the instruction from the street name when the note
+      // is still empty (e.g. "Sla linksaf, de Wouter van den Walestraat in").
+      let note = pd?.note ?? "";
+      if (variant === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null);
       return {
         dist: a.dist,
-        dir: pd?.dir ?? suggested,
-        note: pd?.note ?? "",
+        dir,
+        note,
         ...(pd?.photo ? { photo: pd.photo } : {}),
         ...(pd?.picto ? { picto: pd.picto } : {}),
         ...(pd?.danger ? { danger: pd.danger } : {}),
+        ...(street ? { street } : {}),
         ...(jn ? { roads: jn.roads, take: jn.take } : {}),
       };
     });
@@ -1298,6 +1309,15 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                 ) : (
                   <>
                     {noteInput}
+                    {variant === "routebook" && s?.street ? (
+                      <button
+                        className="mt-1 text-[11px] font-semibold text-teal-dark underline"
+                        title="Vul de aanwijzing met de straatnaam uit de kaart"
+                        onClick={() => setStep(i, { note: routebookPhrase(s.dir, s.street ?? null) })}
+                      >
+                        🛣️ {s.street} — aanwijzing invullen
+                      </button>
+                    ) : null}
                     {dirPicker ? (
                       <div className="mt-1.5">
                         <span className="mb-1 block text-[11px] font-semibold text-polder-grey">Richting (optionele pijl bij de aanwijzing)</span>
