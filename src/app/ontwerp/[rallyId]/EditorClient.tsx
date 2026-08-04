@@ -1480,8 +1480,11 @@ function LiveView({
     if (t.finished) return { state: "finished", offCourse: false, reason: "", noGps: false, idle: false, idleMin: null, etaMin: null, ...base };
     if (t.current_index <= 0 && !here) return { state: "waiting", offCourse: false, reason: "", noGps: false, idle: false, idleMin: null, etaMin: null, ...base };
     const noGps = t.last_gps_at ? (Date.now() - new Date(t.last_gps_at).getTime()) / 60000 > 15 : false;
+    // At a point (doing a task): stopping and being "far from the next point" is
+    // then expected, so suppress the idle / off-course warnings there.
+    const atPoint = here != null && points.some((p) => p.lat != null && p.lng != null && haversine(here, { lat: p.lat, lng: p.lng }) <= Math.max(p.unlock_radius ?? 50, 40));
     const idleMin = trails[t.id]?.idleMin ?? null;
-    const idle = idleLimit != null && idleLimit > 0 && idleMin != null && idleMin >= idleLimit && !noGps;
+    const idle = !atPoint && idleLimit != null && idleLimit > 0 && idleMin != null && idleMin >= idleLimit && !noGps;
     let offCourse = false, reason = "", etaMin: number | null = null;
     const next = points[Math.min(t.current_index + 1, points.length - 1)];
     if (here && next?.lat != null && next?.lng != null) {
@@ -1489,7 +1492,9 @@ function LiveView({
       const recent = trails[t.id]?.recentKmh ?? null;
       if (recent != null && recent > 4) etaMin = Math.max(1, Math.round((dist / 1000 / recent) * 60));
       const path = trails[t.id]?.path ?? [];
-      if (dist > 2500) {
+      if (atPoint) {
+        offCourse = false;
+      } else if (dist > 2500) {
         offCourse = true;
         reason = `${(dist / 1000).toFixed(1)} km van punt ${labelOf(next)}`;
       } else if (path.length >= 2 && dist > 500) {
@@ -1566,6 +1571,17 @@ function LiveView({
     // onRefresh is stable enough (router.refresh); rallyId drives resubscription.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rallyId]);
+
+  // Positions/off-course/idle/ETA change without a scoring event, so realtime
+  // alone can lag — poll every 25 s while the tab is visible to stay live.
+  const refreshRef = useRef(onRefresh);
+  refreshRef.current = onRefresh;
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") refreshRef.current();
+    }, 25000);
+    return () => clearInterval(id);
+  }, []);
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[1fr_360px]">
       <div className="card">
@@ -1595,7 +1611,7 @@ function LiveView({
         ) : null}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <div className="rounded-soft border-[1.5px] border-dashed border-[#C9A227] bg-[#FFF9E8] p-2.5 text-[13px] text-[#6B5200]">
-            👀 Alleen meekijken · <span className="font-bold text-teal">● live</span> — bijgewerkt zodra teams scoren.
+            👀 Alleen meekijken · <span className="font-bold text-teal">● live</span> — automatisch bijgewerkt (elke ~25s en zodra teams scoren).
           </div>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1.5 rounded-soft bg-paper px-2 py-1 text-xs text-polder-grey" title="Standaard snelheidswaarschuwing voor alle trajecten; per traject te overschrijven.">
