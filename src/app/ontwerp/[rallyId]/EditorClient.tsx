@@ -256,22 +256,7 @@ export default function EditorClient({
           onBlur={(e) => e.target.value !== rally.name && run(() => renameRally(rally.id, e.target.value))}
           className="input max-w-[280px] flex-1 text-lg font-bold text-teal-dark"
         />
-        <span className="chip chip-teal">Code {rally.join_code}</span>
-        <div className="flex gap-1.5 rounded-full bg-teal-light p-1">
-          <button
-            className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "build" ? "bg-teal text-white" : "text-teal-dark"}`}
-            onClick={() => setTab("build")}
-          >
-            🛠️ Route ontwerpen
-          </button>
-          <button
-            className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "live" ? "bg-teal text-white" : "text-teal-dark"}`}
-            onClick={() => setTab("live")}
-          >
-            📡 Teams volgen
-          </button>
-        </div>
-        <form action={startTestPlay.bind(null, rally.id)} className="flex items-center gap-1">
+        <form action={startTestPlay.bind(null, rally.id)} className="ml-auto flex items-center gap-1">
           <select name="fromStep" defaultValue="0" className="input px-2 py-2 text-sm" title="Vanaf welk punt wil je testen?">
             <option value={0}>🚩 Vanaf de start</option>
             {points.filter((p) => p.kind === "waypoint").map((p, i) => (
@@ -292,6 +277,24 @@ export default function EditorClient({
         <form action={logout}>
           <button className="btn btn-ghost" type="submit">🔒 Uitloggen</button>
         </form>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <span className="chip chip-teal">Code {rally.join_code}</span>
+        <div className="flex gap-1.5 rounded-full bg-teal-light p-1">
+          <button
+            className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "build" ? "bg-teal text-white" : "text-teal-dark"}`}
+            onClick={() => setTab("build")}
+          >
+            🛠️ Route ontwerpen
+          </button>
+          <button
+            className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "live" ? "bg-teal text-white" : "text-teal-dark"}`}
+            onClick={() => setTab("live")}
+          >
+            📡 Teams volgen
+          </button>
+        </div>
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-polder-grey">
