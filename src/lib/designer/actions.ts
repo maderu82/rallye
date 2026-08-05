@@ -485,6 +485,7 @@ export async function updateLeg(
     photo_buy_cost: number | null;
     route_points: number | null;
     route_corridor: number | null;
+    route_profile: string | null;
   }>,
 ) {
   const db = await createClient();

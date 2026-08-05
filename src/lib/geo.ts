@@ -53,10 +53,40 @@ export function dirFromTakeAngle(take: number): string {
   return right ? "sharp_right" : "sharp_left";
 }
 
+export type RouteProfile = "car" | "bike" | "foot" | "boat";
+type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[] };
+
+// Straight lines between the waypoints — used for "varen" (no road/water routing
+// network) and as the fallback when routing fails.
+function straightRoute(waypoints: LL[]): RouteResult {
+  const legsArr: number[] = [];
+  const legGeoms: [number, number][][] = [];
+  for (let i = 1; i < waypoints.length; i++) {
+    legsArr.push(Math.round(haversine(waypoints[i - 1], waypoints[i])));
+    legGeoms.push([[waypoints[i - 1].lat, waypoints[i - 1].lng], [waypoints[i].lat, waypoints[i].lng]]);
+  }
+  const n = Math.max(0, waypoints.length - 2);
+  return {
+    route: waypoints.map((w) => [w.lat, w.lng] as [number, number]),
+    legs: legsArr,
+    legGeoms,
+    junctions: new Array(n).fill(null),
+    streets: new Array(n).fill(null),
+  };
+}
+
 export async function fetchRoadRoute(
   waypoints: LL[],
-): Promise<{ route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[] } | null> {
+  profile: RouteProfile = "car",
+): Promise<RouteResult | null> {
   if (waypoints.length < 2) return null;
+  // No road/water routing network for boats — draw straight lines instead.
+  if (profile === "boat") return straightRoute(waypoints);
+  // The public OSRM demo only has the car profile; FOSSGIS hosts foot & bike.
+  const host =
+    profile === "bike" ? "https://routing.openstreetmap.de/routed-bike"
+    : profile === "foot" ? "https://routing.openstreetmap.de/routed-foot"
+    : "https://router.project-osrm.org";
   // Give up after 7s so a slow/overloaded public OSRM never hangs the editor;
   // callers fall back to straight lines when this returns null.
   const ctrl = new AbortController();
@@ -65,7 +95,7 @@ export async function fetchRoadRoute(
     const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(";");
     // steps=true gives per-leg geometry so we can read the *real* road angle at
     // each turn point (much better than the straight line between clicks).
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
+    const url = `${host}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) return null;
     const data = await res.json();

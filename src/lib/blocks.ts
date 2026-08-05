@@ -128,6 +128,19 @@ export const DANGER_LABEL: Record<number, string> = {
   2: "!! gevaar",
 };
 
+// ── routing transport profile per leg ────────────────────────────────────────
+export interface RouteProfileDef {
+  id: string;
+  label: string;
+  icon: string;
+}
+export const ROUTE_PROFILES: RouteProfileDef[] = [
+  { id: "car", label: "Auto", icon: "🚗" },
+  { id: "bike", label: "Fiets", icon: "🚲" },
+  { id: "foot", label: "Wandelen", icon: "🚶" },
+  { id: "boat", label: "Varen", icon: "⛵" },
+];
+
 export type HintMode = "off" | "free" | "cost";
 export const HINT_LABEL: Record<HintMode, string> = {
   off: "Uit",

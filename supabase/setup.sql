@@ -98,6 +98,7 @@ create table if not exists public.legs (
   photo_buy_cost   int,
   route_points     int,
   route_corridor   int,
+  route_profile    text,
   created_at       timestamptz not null default now(),
   unique (rally_id, position)
 );
@@ -113,6 +114,7 @@ alter table public.legs add column if not exists photo_radius int;
 alter table public.legs add column if not exists photo_buy_cost int;
 alter table public.legs add column if not exists route_points int;
 alter table public.legs add column if not exists route_corridor int;
+alter table public.legs add column if not exists route_profile text;
 
 -- ─── teams ───────────────────────────────────────────────────────────────────
 create table if not exists public.teams (

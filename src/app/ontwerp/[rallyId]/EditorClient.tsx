@@ -21,9 +21,9 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
   ssr: false,
   loading: () => <div className="flex h-[340px] items-center justify-center rounded-xl bg-teal-light text-sm text-teal-dark">Kaart laden…</div>,
 });
-import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL } from "@/lib/blocks";
+import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL, ROUTE_PROFILES } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, roadbookDirsFromGeom, routebookPhrase } from "@/lib/geo";
+import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, roadbookDirsFromGeom, routebookPhrase, type RouteProfile } from "@/lib/geo";
 import {
   addLeg,
   addPoint,
@@ -140,7 +140,7 @@ export default function EditorClient({
         continue;
       }
       const p = [{ lat: from.lat, lng: from.lng }, ...tps, { lat: to.lat, lng: to.lng }];
-      const road = await fetchRoadRoute(p);
+      const road = await fetchRoadRoute(p, (leg.route_profile ?? "car") as RouteProfile);
       if (!road) { failed++; continue; }
       const existing: RoadbookStep[] = Array.isArray(leg.turn_steps) ? leg.turn_steps : [];
       const auto = deriveRoadbook(p, [], road.legs);
@@ -1037,10 +1037,10 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   // PRESERVING each point's chosen direction/note (only new points get a
   // suggested direction). This is the key: dragging or adding a point never
   // overwrites directions you already set.
-  async function reroute(nextPoints: { lat: number; lng: number }[], perPoint: { dir?: string; note?: string; photo?: string; picto?: string; danger?: number }[]) {
+  async function reroute(nextPoints: { lat: number; lng: number }[], perPoint: { dir?: string; note?: string; photo?: string; picto?: string; danger?: number }[], profile?: string) {
     const p = [start, ...nextPoints, end].filter(Boolean) as { lat: number; lng: number }[];
     setRouting(true);
-    const road = await fetchRoadRoute(p);
+    const road = await fetchRoadRoute(p, (profile ?? leg.route_profile ?? "car") as RouteProfile);
     setRouting(false);
     setRouteFailed(p.length >= 2 && road == null);
     const auto = deriveRoadbook(p, [], road?.legs); // nextPoints.length + 1 entries (last = arrive)
@@ -1126,8 +1126,20 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   const setStep = (i: number, patch: Partial<RoadbookStep>) =>
     run(() => updateLeg(rallyId, leg.id, { turn_steps: steps.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
 
+  const profile = leg.route_profile ?? "car";
+  const setProfile = (pr: string) => {
+    run(() => updateLeg(rallyId, leg.id, { route_profile: pr }));
+    void reroute(turnPoints, curPerPoint(), pr);
+  };
+
   const mapToolbar = (
     <div className="flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-1 rounded-soft bg-paper px-2 py-1 text-xs text-polder-grey" title="Waarover moet de route lopen? Auto/fiets/wandelen gebruiken het juiste wegennet; varen tekent rechte lijnen.">
+        Route over:
+        <select value={profile} className="input px-1.5 py-1 text-xs" onChange={(e) => setProfile(e.target.value)}>
+          {ROUTE_PROFILES.map((p) => <option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
+        </select>
+      </label>
       <button className={`btn text-sm ${addMode ? "btn-coral" : "btn-ghost"}`} onClick={() => setAddMode((v) => !v)}>
         {addMode ? "📍 Klikken staat aan — klik op de kaart" : "➕ Punten klikken"}
       </button>
