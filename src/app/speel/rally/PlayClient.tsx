@@ -102,18 +102,25 @@ function IntroScreen({
   navModes,
   onDone,
 }: {
-  rally: { name: string; brand_logo: string | null };
+  rally: { name: string; brand_logo: string | null; brand_color: string | null; brand_color2: string | null };
   navModes: string[];
   onDone: () => void;
 }) {
   const modes = navModes.map((m) => NAV_INTRO[m]).filter(Boolean);
+  // Show the logo on its brand background (same context as the header) so a
+  // light/transparent logo isn't invisible on the white card.
+  const logoBg = rally.brand_color && rally.brand_color2
+    ? `linear-gradient(120deg, ${rally.brand_color}, ${rally.brand_color2})`
+    : rally.brand_color ?? "#1D9E75";
   return (
     <div className="fixed inset-0 z-[80] overflow-y-auto bg-teal-dark/60 p-4">
       <div className="mx-auto my-6 max-w-[480px] rounded-card bg-white p-5 shadow-card">
         <div className="mb-3 flex items-center gap-3">
           {rally.brand_logo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={rally.brand_logo} alt="" className="h-10 rounded bg-white object-contain" />
+            <span className="flex h-11 items-center rounded-lg px-2" style={{ background: logoBg }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={rally.brand_logo} alt="" className="h-8 max-w-[130px] object-contain" />
+            </span>
           ) : (
             <span className="text-3xl">🧭</span>
           )}
@@ -442,7 +449,8 @@ export default function PlayClient({
         </a>
         {state.rally.brand_logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={state.rally.brand_logo} alt="" className="h-8 max-w-[96px] rounded bg-white/90 object-contain px-1" />
+          // No background — a (transparent) logo sits directly on the coloured header.
+          <img src={state.rally.brand_logo} alt="" className="h-9 max-w-[120px] object-contain" />
         ) : null}
         <div className="flex-1 truncate text-[15px] font-bold">{title}</div>
         <button
