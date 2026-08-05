@@ -710,6 +710,14 @@ function LegNav({
   const checkDot = (i: number) => (
     <span className={`ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold ${checked.has(i) ? "border-teal bg-teal text-white" : "border-polder-line text-transparent"}`}>✓</span>
   );
+  // add (not toggle) — used when the gps confirms you passed a turn point
+  const markChecked = (i: number) =>
+    setChecked((prev) => {
+      if (prev.has(i)) return prev;
+      const n = new Set(prev).add(i);
+      try { localStorage.setItem(`legcheck:${leg.id}`, JSON.stringify([...n])); } catch {}
+      return n;
+    });
 
   return (
     <div className="card mb-3.5 border-l-4 border-teal">
@@ -717,8 +725,13 @@ function LegNav({
         {nav.icon} {nav.label.split(" (")[0]}
       </h3>
 
+      {/* Confirmation beep + auto-check when you actually pass a turn point */}
+      {["turn", "dakar"].includes(leg.nav_mode) && (leg.turn_points ?? []).length > 0 ? (
+        <TurnPointBeeps points={leg.turn_points} onReach={markChecked} />
+      ) : null}
+
       {["turn", "routebook", "dakar"].includes(leg.nav_mode) && (leg.turn_steps ?? []).length > 0 ? (
-        <p className="mb-2 text-[11px] text-polder-grey">Tik een stap aan om &apos;m af te vinken zodra je &apos;m gepasseerd bent.</p>
+        <p className="mb-2 text-[11px] text-polder-grey">Je hoort een piepje zodra je een routepunt passeert — bevestiging dat je goed zit. Tik een stap ook zelf aan als je wilt.</p>
       ) : null}
 
       {leg.nav_mode === "compass" ? <LiveCompass target={target} testMode={testMode} /> : null}
@@ -990,6 +1003,37 @@ function RouteScore({
       )}
     </div>
   );
+}
+
+// ── confirmation beep when the team passes a turn point (bolletje/dakar) ─────
+// Watches the device position and plays the waypoint sound + auto-checks the
+// step the first time you come within range of each turn point — a reassuring
+// "you're on the right route" signal.
+function TurnPointBeeps({ points, onReach }: { points: { lat: number; lng: number }[]; onReach: (i: number) => void }) {
+  const beeped = useRef<Set<number>>(new Set());
+  const cb = useRef(onReach);
+  cb.current = onReach;
+  useEffect(() => {
+    if (!points.length || !("geolocation" in navigator)) return;
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        const here = { lat: p.coords.latitude, lng: p.coords.longitude };
+        const r = Math.max(30, (p.coords.accuracy || 0) * 0.5);
+        points.forEach((pt, i) => {
+          if (beeped.current.has(i)) return;
+          if (pt && pt.lat != null && pt.lng != null && haversine(here, pt) <= r) {
+            beeped.current.add(i);
+            arrivalFeedback("waypoint");
+            cb.current(i);
+          }
+        });
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [points]);
+  return null;
 }
 
 // ── roadbook (Dakar): live trip odometer the team drives on + manual reset ───

@@ -136,6 +136,14 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
     return null;
   }
 
+  // Expected length (m) of the leg leaving each point position — used by the
+  // live view to judge "off course" against the real leg length, not a fixed km.
+  const legExpectedM: Record<number, number> = {};
+  for (let i = 0; i < orderedPoints.length - 1; i++) {
+    const d = legDistanceM(legByPos.get(orderedPoints[i].position), orderedPoints[i], orderedPoints[i + 1]);
+    if (d != null) legExpectedM[orderedPoints[i].position] = Math.round(d);
+  }
+
   const teamSpeeds: Record<string, LegSpeed[]> = {};
   for (const t of (teams ?? []) as Team[]) {
     // earliest event timestamp per point for this team
@@ -224,6 +232,7 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
       teamActivity={teamActivity}
       teamSpeeds={teamSpeeds}
       teamTrails={teamTrails}
+      legExpected={legExpectedM}
       schemaBehind={schemaBehind}
     />
   );

@@ -103,6 +103,7 @@ export default function EditorClient({
   teamActivity,
   teamSpeeds,
   teamTrails,
+  legExpected,
   schemaBehind,
 }: {
   rally: Rally;
@@ -113,6 +114,7 @@ export default function EditorClient({
   teamActivity: Record<string, ActivityItem[]>;
   teamSpeeds: Record<string, LegSpeed[]>;
   teamTrails: Record<string, TeamTrail>;
+  legExpected: Record<number, number>;
   schemaBehind: boolean;
 }) {
   const router = useRouter();
@@ -546,6 +548,7 @@ export default function EditorClient({
           trails={teamTrails}
           defaultLimit={rally.speed_limit}
           idleLimit={rally.idle_limit}
+          legExpected={legExpected}
           onSetLimit={(v) => run(() => updateRallySpeedLimit(rally.id, v))}
           onSetIdleLimit={(v) => run(() => updateRallyIdleLimit(rally.id, v))}
           onDeleteTeam={(id) => run(() => deleteTeam(rally.id, id))}
@@ -1445,6 +1448,7 @@ function LiveView({
   trails,
   defaultLimit,
   idleLimit,
+  legExpected,
   onSetLimit,
   onSetIdleLimit,
   onDeleteTeam,
@@ -1460,6 +1464,7 @@ function LiveView({
   trails: Record<string, TeamTrail>;
   defaultLimit: number | null;
   idleLimit: number | null;
+  legExpected: Record<number, number>;
   onSetLimit: (v: number | null) => void;
   onSetIdleLimit: (v: number | null) => void;
   onDeleteTeam: (teamId: string) => void;
@@ -1507,9 +1512,13 @@ function LiveView({
       const recent = trails[t.id]?.recentKmh ?? null;
       if (recent != null && recent > 4) etaMin = Math.max(1, Math.round((dist / 1000 / recent) * 60));
       const path = trails[t.id]?.path ?? [];
+      // "far" = further from the next point than the real leg length suggests
+      // (they've overshot / gone the wrong way), with a sensible floor.
+      const expected = legExpected[t.current_index];
+      const farLimit = expected != null && expected > 0 ? Math.max(expected * 1.3, 800) : 2500;
       if (atPoint) {
         offCourse = false;
-      } else if (dist > 2500) {
+      } else if (dist > farLimit) {
         offCourse = true;
         reason = `${(dist / 1000).toFixed(1)} km van punt ${labelOf(next)}`;
       } else if (path.length >= 2 && dist > 500) {
@@ -1547,6 +1556,9 @@ function LiveView({
   const nOff = teams.filter((t) => statById.get(t.id)?.offCourse).length;
   const nNoGps = teams.filter((t) => statById.get(t.id)?.state === "onderweg" && statById.get(t.id)?.noGps).length;
   const nIdle = teams.filter((t) => statById.get(t.id)?.idle).length;
+  const offTeams = teams.filter((t) => statById.get(t.id)?.offCourse).map((t) => t.name);
+  const idleTeams = teams.filter((t) => statById.get(t.id)?.idle).map((t) => t.name);
+  const gpsTeams = teams.filter((t) => { const s = statById.get(t.id); return s?.state === "onderweg" && s.noGps; }).map((t) => t.name);
 
   // Push-style notifications when a team newly goes off-course (or loses gps).
   const notifiedRef = useRef<Set<string>>(new Set());
@@ -1692,6 +1704,13 @@ function LiveView({
             <div className={`rounded-soft p-2 text-center ${nOff ? "bg-coral-light" : "bg-paper"}`}><div className={`text-lg font-extrabold ${nOff ? "text-coral" : "text-ink"}`}>{nOff}</div><div className={`text-[10px] font-bold uppercase ${nOff ? "text-coral" : "text-polder-grey"}`}>uit koers</div></div>
             <div className={`rounded-soft p-2 text-center ${nIdle ? "bg-coral-light" : "bg-paper"}`}><div className={`text-lg font-extrabold ${nIdle ? "text-coral" : "text-ink"}`}>{nIdle}</div><div className={`text-[10px] font-bold uppercase ${nIdle ? "text-coral" : "text-polder-grey"}`}>stilstaan</div></div>
             <div className={`rounded-soft p-2 text-center ${nNoGps ? "bg-coral-light" : "bg-paper"}`}><div className={`text-lg font-extrabold ${nNoGps ? "text-coral" : "text-ink"}`}>{nNoGps}</div><div className={`text-[10px] font-bold uppercase ${nNoGps ? "text-coral" : "text-polder-grey"}`}>geen gps</div></div>
+          </div>
+        ) : null}
+        {offTeams.length || idleTeams.length || gpsTeams.length ? (
+          <div className="mb-2.5 space-y-0.5 rounded-soft border-2 border-[#D85A30] bg-coral-light p-2 text-[13px] text-coral">
+            {offTeams.length ? <div>🧭 <b>Uit koers:</b> {offTeams.join(", ")}</div> : null}
+            {idleTeams.length ? <div>🛑 <b>Staat te lang stil:</b> {idleTeams.join(", ")}</div> : null}
+            {gpsTeams.length ? <div>📡 <b>Geen recente gps:</b> {gpsTeams.join(", ")}</div> : null}
           </div>
         ) : null}
         <p className="mb-2.5 text-xs text-polder-grey">Klik een team open om hun antwoorden en foto&apos;s te zien.</p>
