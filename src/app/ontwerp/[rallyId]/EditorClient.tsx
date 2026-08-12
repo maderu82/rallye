@@ -409,7 +409,7 @@ export default function EditorClient({
                         <button
                           onClick={() => setSel({ kind: "leg", id: legs[i].id })}
                           className={`ml-6 mt-1.5 flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-soft border-2 border-dashed p-2 text-left text-[13px] font-semibold ${
-                            sel?.kind === "leg" && sel.id === legs[i].id ? "border-coral bg-coral-light text-ink" : "border-polder-line text-polder-grey hover:border-teal"
+                            sel?.kind === "leg" && sel.id === legs[i].id ? "border-coral bg-coral-light text-ink" : legIncomplete(legs[i]) ? "border-[#D85A30]/60 text-polder-grey hover:border-teal" : "border-polder-line text-polder-grey hover:border-teal"
                           }`}
                         >
                           <span className="text-[15px]">{NAV_BY_MODE[legs[i].nav_mode].icon}</span>
@@ -417,6 +417,7 @@ export default function EditorClient({
                             Traject {labelOf(p)} → {labelOf(points[i + 1])}
                             <small className="block font-normal text-[11px]">{legSummary(legs[i])}</small>
                           </span>
+                          {legIncomplete(legs[i]) ? <span className="rounded-xl bg-coral-light px-2 py-0.5 text-[11px] font-bold text-coral" title="Navigatietype gekozen, maar de instructies zijn nog niet ingevuld">⚠️ vul in</span> : null}
                           {legs[i].enroute_enabled ? <span className="rounded-xl bg-purple-light px-2 py-0.5 text-[11px] text-purple">❓</span> : null}
                         </button>
                       ) : (
