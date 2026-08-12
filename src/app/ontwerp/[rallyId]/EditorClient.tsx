@@ -348,7 +348,7 @@ export default function EditorClient({
 
       {tab === "build" ? (
         <>
-        <NavOverview legs={legs} />
+        <NavOverview legs={legs} points={points} labelOf={labelOf} onSelect={(id) => setSel({ kind: "leg", id })} />
         <div className="grid items-start gap-4 lg:grid-cols-[290px_1fr_330px]">
           {/* list */}
           <div className="card">
@@ -1401,31 +1401,78 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   );
 }
 
+// Does a leg still miss the instructions its nav mode needs?
+function legIncomplete(l: Leg): boolean {
+  const steps = Array.isArray(l.turn_steps) ? l.turn_steps : [];
+  const hasFreeText = (l.steps ?? "").trim().length > 0;
+  switch (l.nav_mode) {
+    case "compass":
+    case "map":
+      return false; // no per-step instructions needed
+    case "line":
+      return !(Array.isArray(l.turn_route) && l.turn_route.length >= 2);
+    case "photo_nav":
+      return steps.length === 0 || steps.some((s) => !s.photo);
+    case "cryptic":
+      return steps.length === 0 || steps.some((s) => !(s.note ?? "").trim());
+    case "turn":
+    case "dakar":
+    case "routebook":
+      return steps.length === 0 && !hasFreeText;
+    default:
+      return false;
+  }
+}
+
 // ── navigation overview (route ontwerpen) ───────────────────────────────────
-// A quick dashboard of which navigation styles the puzzle uses, so the designer
-// sees the mix at a glance and can vary it.
-function NavOverview({ legs }: { legs: Leg[] }) {
+// A quick dashboard of which navigation styles the puzzle uses (including the
+// ones it doesn't), and which trajects still miss their instructions.
+function NavOverview({ legs, points, labelOf, onSelect }: { legs: Leg[]; points: Point[]; labelOf: (p: Point) => string; onSelect: (legId: string) => void }) {
   const counts = new Map<string, number>();
   for (const l of legs) counts.set(l.nav_mode, (counts.get(l.nav_mode) ?? 0) + 1);
-  const entries = NAV_MODES.filter((n) => counts.has(n.mode));
+  const usedCount = NAV_MODES.filter((n) => counts.has(n.mode)).length;
+  const incomplete = legs.map((l, i) => ({ l, i })).filter(({ l }) => legIncomplete(l));
   return (
     <div className="card mb-4">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-bold uppercase tracking-wide text-teal-dark">Navigatie-mix</h3>
-        <span className="text-xs text-polder-grey">{legs.length} traject{legs.length === 1 ? "" : "en"} · {entries.length} soort{entries.length === 1 ? "" : "en"} navigatie</span>
+        <span className="text-xs text-polder-grey">{legs.length} traject{legs.length === 1 ? "" : "en"} · {usedCount} van {NAV_MODES.length} soorten gebruikt</span>
       </div>
-      {entries.length ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {entries.map((n) => (
-            <span key={n.mode} className="flex items-center gap-1.5 rounded-full border-2 border-polder-line bg-paper px-2.5 py-1 text-[13px]">
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {NAV_MODES.map((n) => {
+          const c = counts.get(n.mode) ?? 0;
+          return (
+            <span
+              key={n.mode}
+              className={`flex items-center gap-1.5 rounded-full border-2 px-2.5 py-1 text-[13px] ${c ? "border-teal-light bg-paper" : "border-dashed border-polder-line opacity-55"}`}
+              title={c ? `${c}× gebruikt` : "Niet gebruikt in deze rally"}
+            >
               <span>{n.icon}</span>
-              <span className="font-semibold text-ink">{n.label.split(" (")[0].split(" — ")[0]}</span>
-              <span className="rounded-full bg-teal-light px-1.5 text-[11px] font-bold text-teal-dark">{counts.get(n.mode)}</span>
+              <span className={`font-semibold ${c ? "text-ink" : "text-polder-grey"}`}>{n.label.split(" (")[0].split(" — ")[0]}</span>
+              <span className={`rounded-full px-1.5 text-[11px] font-bold ${c ? "bg-teal-light text-teal-dark" : "bg-polder-line text-polder-grey"}`}>{c}</span>
             </span>
-          ))}
+          );
+        })}
+      </div>
+      {incomplete.length ? (
+        <div className="mt-3 rounded-soft border-2 border-[#D85A30] bg-coral-light p-2">
+          <span className="text-[13px] font-bold text-coral">⚠️ Nog geen instructies ({incomplete.length}) — klik om in te vullen:</span>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {incomplete.map(({ l, i }) => (
+              <button
+                key={l.id}
+                onClick={() => onSelect(l.id)}
+                className="flex items-center gap-1 rounded-full border-2 border-[#D85A30] bg-white px-2.5 py-1 text-[12px] font-semibold text-coral"
+              >
+                {NAV_BY_MODE[l.nav_mode].icon} Traject {points[i] ? labelOf(points[i]) : "?"} → {points[i + 1] ? labelOf(points[i + 1]) : "?"}
+              </button>
+            ))}
+          </div>
         </div>
+      ) : legs.length ? (
+        <p className="mt-2 text-[13px] font-semibold text-teal-dark">✓ Alle trajecten hebben instructies.</p>
       ) : (
-        <p className="mt-2 text-[13px] text-polder-grey">Nog geen trajecten met een navigatiewijze. Voeg punten toe en kies per traject een navigatievorm.</p>
+        <p className="mt-2 text-[13px] text-polder-grey">Nog geen trajecten. Voeg punten toe en kies per traject een navigatievorm.</p>
       )}
     </div>
   );
