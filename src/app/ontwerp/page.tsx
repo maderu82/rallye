@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { createRally } from "@/lib/designer/actions";
+import { createRally, copyRally } from "@/lib/designer/actions";
 import { logout } from "@/lib/auth/actions";
 import DeleteRallyButton from "./DeleteRallyButton";
 import TrashRallyRow from "./TrashRallyRow";
@@ -53,6 +53,9 @@ export default async function DesignerHome() {
                     </div>
                   </div>
                   <Link href={`/ontwerp/${r.id}`} className="btn btn-ghost text-sm">Bewerken</Link>
+                  <form action={copyRally.bind(null, r.id)}>
+                    <button className="btn btn-ghost text-sm" type="submit" title="Maak een kopie (nieuwe code, verse teams/scores)">📋</button>
+                  </form>
                   <DeleteRallyButton rallyId={r.id} rallyName={r.name} />
                 </li>
               ))}

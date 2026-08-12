@@ -58,6 +58,60 @@ export async function createRally(formData: FormData) {
   redirect(`/ontwerp/${rally.id}`);
 }
 
+// Deep-copy a rally (points, legs, assignments) into a fresh one — new join
+// code, unpublished, no teams/scores — so a rally can be reused per event with
+// its own scoreboard.
+export async function copyRally(rallyId: string) {
+  await requireOwner(rallyId);
+  const admin = createAdminClient();
+
+  const { data: src } = await admin.from("rallies").select("*").eq("id", rallyId).single();
+  if (!src) throw new Error("Rally niet gevonden.");
+
+  const { data: dst, error } = await admin
+    .from("rallies")
+    .insert({
+      owner_id: src.owner_id,
+      name: `${src.name} (kopie)`,
+      join_code: genCode(),
+      published: false,
+      speed_limit: src.speed_limit,
+      idle_limit: src.idle_limit,
+      brand_color: src.brand_color,
+      brand_color2: src.brand_color2,
+      brand_logo: src.brand_logo,
+    })
+    .select("id")
+    .single();
+  if (error || !dst) throw new Error(error?.message ?? "Kon kopie niet aanmaken.");
+
+  // points (keep an old→new id map for the assignments)
+  const { data: pts } = await admin.from("points").select("*").eq("rally_id", rallyId).order("position");
+  const idMap = new Map<string, string>();
+  for (const p of pts ?? []) {
+    const { id, rally_id: _r, created_at: _c, ...rest } = p as Record<string, unknown>;
+    const { data: np } = await admin.from("points").insert({ ...rest, rally_id: dst.id }).select("id").single();
+    if (np) idMap.set(id as string, np.id);
+  }
+  // legs (position-based, jsonb geometry has no ids → copy as-is)
+  const { data: legs } = await admin.from("legs").select("*").eq("rally_id", rallyId).order("position");
+  for (const l of legs ?? []) {
+    const { id: _i, rally_id: _r, created_at: _c, ...rest } = l as Record<string, unknown>;
+    await admin.from("legs").insert({ ...rest, rally_id: dst.id });
+  }
+  // assignments (remap point_id)
+  const { data: asg } = await admin.from("assignments").select("*").eq("rally_id", rallyId);
+  for (const a of asg ?? []) {
+    const { id: _i, rally_id: _r, point_id, created_at: _c, ...rest } = a as Record<string, unknown>;
+    const newPid = idMap.get(point_id as string);
+    if (!newPid) continue;
+    await admin.from("assignments").insert({ ...rest, rally_id: dst.id, point_id: newPid });
+  }
+
+  revalidatePath("/ontwerp");
+  redirect(`/ontwerp/${dst.id}`);
+}
+
 /** Point kinds are derived from order: first = start, last = finish, rest = waypoint. */
 async function recomputeKinds(db: DB, rallyId: string) {
   const { data: pts } = await db.from("points").select("id").eq("rally_id", rallyId).order("position");
