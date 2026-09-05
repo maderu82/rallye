@@ -107,6 +107,38 @@ function IntroScreen({
   onDone: () => void;
 }) {
   const modes = navModes.map((m) => NAV_INTRO[m]).filter(Boolean);
+
+  // Live start-point readiness check: confirm the browser actually grants a
+  // precise fix before the team sets off. A network/coarse fix (>150 m, same
+  // threshold the compass/live view use) means precise location is off or the
+  // phone has no clear sky — both break navigation, so we flag it here.
+  type GpsCheck = { state: "checking" | "denied" | "coarse" | "ok"; acc: number | null };
+  const [gps, setGps] = useState<GpsCheck>({ state: "checking", acc: null });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!("geolocation" in navigator)) {
+      setGps({ state: "denied", acc: null });
+      return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        const acc = Math.round(p.coords.accuracy || 0);
+        setGps({ state: acc > 0 && acc <= 150 ? "ok" : "coarse", acc });
+      },
+      (err) => {
+        if (err.code === err.PERMISSION_DENIED) setGps({ state: "denied", acc: null });
+        // timeout / position-unavailable: keep waiting for a fix
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [attempt]);
+  const ready = gps.state === "ok";
+  const remeasure = () => {
+    setGps({ state: "checking", acc: null });
+    setAttempt((a) => a + 1);
+  };
+
   // Show the logo on its brand background (same context as the header) so a
   // light/transparent logo isn't invisible on the white card.
   const logoBg = rally.brand_color && rally.brand_color2
@@ -130,8 +162,34 @@ function IntroScreen({
           </div>
         </div>
 
-        <div className="rounded-soft bg-coral-light p-2.5 text-[12px] text-coral">
-          📡 <b>Zet nauwkeurige locatie én geluid aan.</b> Zonder nauwkeurige locatie klopt de navigatie niet.
+        <div
+          className={`rounded-soft p-2.5 text-[12px] ${
+            gps.state === "ok"
+              ? "bg-teal-light text-teal-dark"
+              : gps.state === "checking"
+                ? "bg-paper text-polder-grey"
+                : "bg-coral-light text-coral"
+          }`}
+        >
+          {gps.state === "checking" ? (
+            <>📡 <b>Locatie controleren…</b> Sta locatietoegang toe als je browser erom vraagt.</>
+          ) : gps.state === "ok" ? (
+            <>✅ <b>Nauwkeurige locatie werkt</b> (±{gps.acc} m) — je bent klaar om te starten. Zet ook je <b>geluid</b> aan.</>
+          ) : gps.state === "denied" ? (
+            <>❌ <b>Geen locatietoegang.</b> Zet locatie aan voor deze site en tik op &ldquo;opnieuw meten&rdquo;.</>
+          ) : (
+            <>
+              ⚠️ <b>Locatie is nog te grof{gps.acc != null ? ` (±${gps.acc >= 1000 ? `${(gps.acc / 1000).toFixed(1)} km` : `${gps.acc} m`})` : ""}.</b> Zet <b>nauwkeurige locatie</b> aan en ga naar buiten met vrij zicht — zonder klopt de navigatie niet.
+              <div className="mt-1 text-[11px]">
+                iPhone: Instellingen → Privacy → Locatievoorzieningen → Safari → <b>Nauwkeurige locatie</b> aan. Android: Chrome → siterechten → Locatie → <b>Nauwkeurig</b>.
+              </div>
+            </>
+          )}
+          {gps.state !== "ok" && gps.state !== "checking" ? (
+            <button className="mt-1.5 rounded bg-white/70 px-2 py-0.5 text-[11px] font-bold underline" onClick={remeasure}>
+              🔄 opnieuw meten
+            </button>
+          ) : null}
         </div>
 
         {modes.length ? (
@@ -163,9 +221,14 @@ function IntroScreen({
           </button>
         </div>
 
-        <button className="btn btn-primary mt-4 w-full" onClick={onDone}>
+        <button className="btn btn-primary mt-4 w-full disabled:opacity-40" disabled={!ready} onClick={onDone}>
           ✅ Ik heb het begrepen — beginnen!
         </button>
+        {!ready ? (
+          <button className="mt-2 w-full text-center text-[11px] text-polder-grey underline" onClick={onDone}>
+            Toch beginnen zonder nauwkeurige locatie
+          </button>
+        ) : null}
       </div>
     </div>
   );
