@@ -24,12 +24,16 @@ export type TeamTrail = {
 };
 
 export type ActivityItem = {
+  eventId: string;
   label: string;
   answer: string;
   points: number;
   photoUrl: string | null;
   isVideo: boolean;
   when: string;
+  // true when this row is a specific graded task (assignment / en-route
+  // answer) whose score the game leader may correct in the back end.
+  correctable: boolean;
 };
 
 const VIDEO_RE = /\.(mp4|webm|mov|m4v|ogg|3gp)$/i;
@@ -109,12 +113,16 @@ export default async function EditorPage({ params }: { params: Promise<{ rallyId
     if (!answer && !photoUrl && e.points_delta === 0) continue;
     const label = a?.prompt || (e.kind === "enroute" ? "Onderwegvraag" : e.kind === "manual" ? "Handmatig / correctie" : "Actie");
     (teamActivity[e.team_id] ??= []).push({
+      eventId: e.id,
       label,
       answer,
       points: e.points_delta,
       photoUrl,
       isVideo: e.photo_path ? VIDEO_RE.test(e.photo_path) : false,
       when: new Date(e.created_at).toLocaleString("nl-NL"),
+      // a specific task the leader can re-grade: a point assignment or an
+      // en-route answer (not automatic penalties or manual corrections).
+      correctable: !!e.assignment_id || e.kind === "enroute",
     });
   }
 

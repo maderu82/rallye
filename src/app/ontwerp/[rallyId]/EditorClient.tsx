@@ -36,6 +36,7 @@ import {
   movePointTo,
   renameRally,
   reorderPoint,
+  reviewSubmission,
   startTestPlay,
   togglePublish,
   updateAssignment,
@@ -89,7 +90,7 @@ type LiveTeam = {
   last_lng: number | null;
   last_gps_at: string | null;
 };
-type ActivityItem = { label: string; answer: string; points: number; photoUrl: string | null; isVideo: boolean; when: string };
+type ActivityItem = { eventId: string; label: string; answer: string; points: number; photoUrl: string | null; isVideo: boolean; when: string; correctable: boolean };
 type LegSpeed = { from: string; to: string; kmh: number; limit: number; over: boolean };
 type TeamTrail = { path: [number, number][]; peakKmh: number | null; lastAcc: number | null; idleMin: number | null; recentKmh: number | null };
 type Sel = { kind: "point" | "leg"; id: string } | null;
@@ -554,6 +555,7 @@ export default function EditorClient({
           onSetIdleLimit={(v) => run(() => updateRallyIdleLimit(rally.id, v))}
           onDeleteTeam={(id) => run(() => deleteTeam(rally.id, id))}
           onClearTeams={() => run(() => clearTeams(rally.id))}
+          onCorrect={(eventId, finalPoints) => run(() => reviewSubmission(rally.id, eventId, finalPoints))}
           labelOf={labelOf}
           onRefresh={() => router.refresh()}
         />
@@ -1501,6 +1503,7 @@ function LiveView({
   onSetIdleLimit,
   onDeleteTeam,
   onClearTeams,
+  onCorrect,
   labelOf,
   onRefresh,
 }: {
@@ -1517,6 +1520,7 @@ function LiveView({
   onSetIdleLimit: (v: number | null) => void;
   onDeleteTeam: (teamId: string) => void;
   onClearTeams: () => void;
+  onCorrect: (eventId: string, finalPoints: number) => void;
   labelOf: (p: Point) => string;
   onRefresh: () => void;
 }) {
@@ -1838,6 +1842,7 @@ function LiveView({
                               </a>
                             ) : null}
                             <p className="mt-0.5 text-[10px] text-polder-grey">{it.when}</p>
+                            {it.correctable ? <CorrectRow eventId={it.eventId} awarded={it.points} onCorrect={onCorrect} /> : null}
                           </div>
                         ))
                       )}
@@ -1870,6 +1875,43 @@ function gpsAge(iso: string): string {
   if (s < 30) return "net";
   if (s < 3600) return `${Math.round(s / 60)} min`;
   return `${Math.round(s / 3600)} u`;
+}
+
+// Back-end correction of one graded task: the game leader sets the final score
+// for a specific submission; reviewSubmission books the difference as a
+// correcting event so the running total and leaderboard update live.
+function CorrectRow({ eventId, awarded, onCorrect }: { eventId: string; awarded: number; onCorrect: (id: string, pts: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [val, setVal] = useState(String(awarded));
+  if (!open) {
+    return (
+      <button className="mt-1 text-[11px] font-semibold text-teal-dark underline" onClick={() => { setVal(String(awarded)); setOpen(true); }}>
+        ✏️ Punten corrigeren
+      </button>
+    );
+  }
+  const n = Number(val);
+  const valid = val.trim() !== "" && Number.isFinite(n);
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-soft bg-white p-1.5">
+      <span className="text-[11px] text-polder-grey">Nieuwe score:</span>
+      <input
+        type="number"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        className="w-16 rounded border border-polder-line px-1.5 py-0.5 text-[13px]"
+      />
+      <span className="text-[11px] text-polder-grey">nu {awarded > 0 ? "+" : ""}{awarded} ptn</span>
+      <button
+        className="rounded bg-teal px-2 py-0.5 text-[11px] font-bold text-white disabled:opacity-40"
+        disabled={!valid || Math.round(n) === awarded}
+        onClick={() => { onCorrect(eventId, Math.round(n)); setOpen(false); }}
+      >
+        Opslaan
+      </button>
+      <button className="text-[11px] text-polder-grey underline" onClick={() => setOpen(false)}>annuleren</button>
+    </div>
+  );
 }
 
 function geoPos(points: Point[], t: number): [number, number] | null {
