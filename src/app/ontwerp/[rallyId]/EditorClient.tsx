@@ -166,7 +166,13 @@ export default function EditorClient({
         // A roundabout wins over a plain junction — it becomes a "take the Nth
         // exit" step (no junction tulip) instead of an angle-guessed turn.
         const isRound = rb != null;
-        const dir = isRound ? "roundabout" : jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
+        let dir = isRound ? "roundabout" : jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
+        // Rescue a misread "straight": OSRM has a real turn maneuver at this point
+        // (e.g. crossing a parallel road just before turning). Trust it and drop
+        // the junction tulip so the schema shows the turn, not the crossing.
+        const mv = road.maneuvers?.[i];
+        const rescued = !isRound && dir === "straight" && !!mv && mv !== "straight";
+        if (rescued && mv) dir = mv;
         let note = pd?.note ?? "";
         if (leg.nav_mode === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb.exit ?? undefined : undefined);
         return {
@@ -180,7 +186,7 @@ export default function EditorClient({
           ...(street ? { street } : {}),
           ...(isRound
             ? { exit: rb.exit ?? 0, ...(rb.take != null ? { take: rb.take } : {}) }
-            : jn ? { roads: jn.roads, take: jn.take } : {}),
+            : rescued ? {} : jn ? { roads: jn.roads, take: jn.take } : {}),
         };
       });
       const res = await updateLeg(rally.id, leg.id, { turn_steps: merged, turn_route: road.route });
@@ -1075,7 +1081,12 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       // Newly placed points get the junction-accurate direction; a direction you
       // already chose is preserved (drag/add never overwrites your choice). A
       // roundabout becomes a "take the Nth exit" step rather than a plain turn.
-      const suggested = isRound ? "roundabout" : jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
+      const mv = road?.maneuvers?.[i];
+      let suggested = isRound ? "roundabout" : jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
+      // Rescue a misread "straight" from a real OSRM turn maneuver (parallel-road
+      // crossing before the actual turn).
+      const rescued = !isRound && suggested === "straight" && !!mv && mv !== "straight";
+      if (rescued && mv) suggested = mv;
       const dir = pd?.dir ?? suggested;
       // Routebook: auto-write the instruction from the street name when the note
       // is still empty (e.g. "Sla linksaf, de Wouter van den Walestraat in").
@@ -1091,7 +1102,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         ...(street ? { street } : {}),
         ...(isRound
           ? { exit: rb.exit ?? 0, ...(rb.take != null ? { take: rb.take } : {}) }
-          : jn ? { roads: jn.roads, take: jn.take } : {}),
+          : rescued && !pd?.dir ? {} : jn ? { roads: jn.roads, take: jn.take } : {}),
       };
     });
     run(() => updateLeg(rallyId, leg.id, { turn_points: nextPoints, turn_steps: merged, turn_route: road?.route ?? [] }));

@@ -56,6 +56,20 @@ export function routebookPhrase(dir: string, street: string | null, exit?: numbe
   }
 }
 
+/** Map an OSRM maneuver modifier to a roadbook direction id (null = not a turn). */
+function modifierToDir(mod?: string): string | null {
+  switch ((mod ?? "").toLowerCase()) {
+    case "left": return "left";
+    case "right": return "right";
+    case "slight left": return "slight_left";
+    case "slight right": return "slight_right";
+    case "sharp left": return "sharp_left";
+    case "sharp right": return "sharp_right";
+    case "uturn": return "uturn";
+    default: return null; // "straight" / unknown: no override
+  }
+}
+
 /** Roadbook direction id from a tulip take-angle (0 = straight ahead, 90 = right). */
 export function dirFromTakeAngle(take: number): string {
   const a = (((take % 360) + 360) % 360); // 0..360
@@ -70,7 +84,7 @@ export function dirFromTakeAngle(take: number): string {
 }
 
 export type RouteProfile = "car" | "bike" | "foot" | "boat";
-type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[]; roundabouts: (RoundInfo | null)[] };
+type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[]; roundabouts: (RoundInfo | null)[]; maneuvers: (string | null)[] };
 
 // Straight lines between the waypoints — used for "varen" (no road/water routing
 // network) and as the fallback when routing fails.
@@ -89,6 +103,7 @@ function straightRoute(waypoints: LL[]): RouteResult {
     junctions: new Array(n).fill(null),
     streets: new Array(n).fill(null),
     roundabouts: new Array(n).fill(null),
+    maneuvers: new Array(n).fill(null),
   };
 }
 
@@ -169,6 +184,22 @@ export async function fetchRoadRoute(
         rounds.push({ lat: loc[1], lng: loc[0], exit, take });
       }
     }
+    // Directional turn maneuvers (turn/fork/end-of-road/…) OSRM emits. We use
+    // these to rescue a turn the junction geometry misreads as "straight" — e.g.
+    // crossing a parallel/frontage road just before turning onto the main road,
+    // where the nearest junction node is the straight crossing.
+    type Turn = { lat: number; lng: number; dir: string };
+    const turns: Turn[] = [];
+    for (const l of rawLegs) {
+      for (const s of l.steps ?? []) {
+        const t = (s.maneuver?.type ?? "").toLowerCase();
+        if (/roundabout|rotary|depart|arrive/.test(t)) continue;
+        const dir = modifierToDir(s.maneuver?.modifier);
+        const loc = s.maneuver?.location;
+        if (!dir || !loc) continue;
+        turns.push({ lat: loc[1], lng: loc[0], dir });
+      }
+    }
 
     // OSRM's snapped waypoint locations (used as the search anchor per turn point).
     const snapped = ((data.waypoints ?? []) as { location?: [number, number] }[]).map((w) => w.location);
@@ -179,6 +210,7 @@ export async function fetchRoadRoute(
     const junctions: (Junction | null)[] = [];
     const streets: (string | null)[] = [];
     const roundabouts: (RoundInfo | null)[] = [];
+    const maneuvers: (string | null)[] = [];
     for (let wi = 1; wi < waypoints.length - 1; wi++) {
       // the road entered after this waypoint = first step of the leg leaving it
       const nm = rawLegs[wi]?.steps?.find((s) => s.name && s.name.trim())?.name?.trim() || null;
@@ -220,13 +252,22 @@ export async function fetchRoadRoute(
       } else {
         roundabouts.push(null);
       }
+      // Nearest directional turn maneuver within 30 m of the point (for rescuing
+      // a misread "straight" at a parallel-road crossing).
+      let mvBest: string | null = null;
+      let mvDist = Infinity;
+      for (const t of turns) {
+        const d = haversine(target, { lat: t.lat, lng: t.lng });
+        if (d <= 30 && d < mvDist) { mvDist = d; mvBest = t.dir; }
+      }
+      maneuvers.push(isRound ? null : mvBest);
       if (!best || best.in < 0 || best.out < 0) { junctions.push(null); continue; }
       // Rotate so the road we came in on points down (180°); mark the exit road.
       const inB = best.bearings[best.in];
       const rot = (b: number) => Math.round((((b - inB + 180) % 360) + 360) % 360);
       junctions.push({ roads: best.bearings.map(rot), take: rot(best.bearings[best.out]) });
     }
-    return { route, legs, legGeoms, junctions, streets, roundabouts };
+    return { route, legs, legGeoms, junctions, streets, roundabouts, maneuvers };
   } catch {
     return null;
   } finally {
