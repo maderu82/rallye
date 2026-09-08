@@ -89,6 +89,7 @@ export interface RoadbookStep {
   radius?: number; // per-step arrival geofence in m (foto/cryptische route); null = leg default
   roads?: number[]; // tulip: screen angles of all roads at this junction
   take?: number; // tulip: screen angle of the road to take
+  exit?: number; // roundabout: which exit to take (1-based); dir === "roundabout"
   picto?: string; // roadbook (Dakar): landmark pictogram id at this point
   danger?: number; // roadbook (Dakar): warning level 0=none, 1=let op, 2=gevaar
   street?: string; // routebook: name of the road turned onto here (from the map)

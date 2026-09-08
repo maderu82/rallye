@@ -7,7 +7,7 @@ const TULIP_ANGLE: Record<string, number> = {
   sharp_left: -135, sharp_right: 135, uturn: 165,
 };
 
-export default function TulipGlyph({ dir, roads, take, size = 52 }: { dir: string; roads?: number[]; take?: number; size?: number }) {
+export default function TulipGlyph({ dir, roads, take, exit, size = 52 }: { dir: string; roads?: number[]; take?: number; exit?: number; size?: number }) {
   const purple = "#534AB7", ball = "#D85A30", grey = "#B7B7C9";
 
   // Real junction: draw every road (grey), highlight the one to take (purple).
@@ -45,6 +45,9 @@ export default function TulipGlyph({ dir, roads, take, size = 52 }: { dir: strin
         <circle cx="30" cy="27" r="12" fill="none" stroke={purple} strokeWidth="3.5" />
         <path d="M42 22 l6 -3 l-2 7 z" fill={purple} />
         <circle cx="30" cy="42" r="5" fill={ball} />
+        {exit && exit > 0 ? (
+          <text x="30" y="27" textAnchor="middle" dominantBaseline="central" fontSize="13" fontWeight="700" fill={purple}>{exit}</text>
+        ) : null}
       </svg>
     );
   }

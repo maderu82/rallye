@@ -159,12 +159,16 @@ export default function EditorClient({
         };
         const pd = existing[i];
         const jn = road.junctions?.[i];
+        const rb = road.roundabouts?.[i];
         const street = road.streets?.[i] ?? undefined;
         // Recompute is authoritative: re-derive the direction from the actual
         // junction the route takes, so the label matches the highlighted road.
-        const dir = jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
+        // A roundabout wins over a plain junction — it becomes a "take the Nth
+        // exit" step (no junction tulip) instead of an angle-guessed turn.
+        const isRound = rb != null;
+        const dir = isRound ? "roundabout" : jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
         let note = pd?.note ?? "";
-        if (leg.nav_mode === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null);
+        if (leg.nav_mode === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb : undefined);
         return {
           dist: a.dist,
           dir,
@@ -174,7 +178,7 @@ export default function EditorClient({
           ...(pd?.picto ? { picto: pd.picto } : {}),
           ...(pd?.danger ? { danger: pd.danger } : {}),
           ...(street ? { street } : {}),
-          ...(jn ? { roads: jn.roads, take: jn.take } : {}),
+          ...(isRound ? { exit: rb } : jn ? { roads: jn.roads, take: jn.take } : {}),
         };
       });
       const res = await updateLeg(rally.id, leg.id, { turn_steps: merged, turn_route: road.route });
@@ -1063,15 +1067,18 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       };
       const pd = perPoint[i];
       const jn = road?.junctions?.[i];
+      const rb = road?.roundabouts?.[i];
       const street = road?.streets?.[i] ?? undefined;
+      const isRound = rb != null;
       // Newly placed points get the junction-accurate direction; a direction you
-      // already chose is preserved (drag/add never overwrites your choice).
-      const suggested = jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
+      // already chose is preserved (drag/add never overwrites your choice). A
+      // roundabout becomes a "take the Nth exit" step rather than a plain turn.
+      const suggested = isRound ? "roundabout" : jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
       const dir = pd?.dir ?? suggested;
       // Routebook: auto-write the instruction from the street name when the note
       // is still empty (e.g. "Sla linksaf, de Wouter van den Walestraat in").
       let note = pd?.note ?? "";
-      if (variant === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null);
+      if (variant === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb : undefined);
       return {
         dist: a.dist,
         dir,
@@ -1080,7 +1087,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         ...(pd?.picto ? { picto: pd.picto } : {}),
         ...(pd?.danger ? { danger: pd.danger } : {}),
         ...(street ? { street } : {}),
-        ...(jn ? { roads: jn.roads, take: jn.take } : {}),
+        ...(isRound ? { exit: rb } : jn ? { roads: jn.roads, take: jn.take } : {}),
       };
     });
     run(() => updateLeg(rallyId, leg.id, { turn_points: nextPoints, turn_steps: merged, turn_route: road?.route ?? [] }));
@@ -1258,7 +1265,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                     <span className="flex shrink-0 items-center gap-1 rounded-soft border-2 border-[#534AB7]/30 bg-white px-1" title="Zo ziet de speler dit schema">
                       {variant === "dakar"
                         ? <RoadArrowGlyph dir={s?.dir ?? "straight"} roads={s?.roads} take={s?.take} size={44} />
-                        : <TulipGlyph dir={s?.dir ?? "straight"} roads={s?.roads} take={s?.take} size={44} />}
+                        : <TulipGlyph dir={s?.dir ?? "straight"} roads={s?.roads} take={s?.take} exit={s?.exit} size={44} />}
                       <span className="pr-1 text-[9px] font-bold uppercase text-polder-grey">schema</span>
                     </span>
                   ) : null}
@@ -1334,7 +1341,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                       <button
                         className="mt-1 text-[11px] font-semibold text-teal-dark underline"
                         title="Vul de aanwijzing met de straatnaam uit de kaart"
-                        onClick={() => setStep(i, { note: routebookPhrase(s.dir, s.street ?? null) })}
+                        onClick={() => setStep(i, { note: routebookPhrase(s.dir, s.street ?? null, s.exit) })}
                       >
                         🛣️ {s.street} — aanwijzing invullen
                       </button>

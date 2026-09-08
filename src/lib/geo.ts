@@ -22,8 +22,13 @@ export interface Junction {
   take: number; // screen angle of the road to take
 }
 
+/** Ordinal for a roundabout exit: 1 → "1e", 2 → "2e", … */
+function ordinal(n: number): string {
+  return `${n}e`;
+}
+
 /** Build a Dutch routebook instruction from a direction + the road turned onto. */
-export function routebookPhrase(dir: string, street: string | null): string {
+export function routebookPhrase(dir: string, street: string | null, exit?: number): string {
   const road = street ? street.trim() : "";
   switch (dir) {
     case "straight": return road ? `Ga rechtdoor op de ${road}` : "Ga rechtdoor";
@@ -34,7 +39,12 @@ export function routebookPhrase(dir: string, street: string | null): string {
     case "sharp_left": return road ? `Scherp linksaf, de ${road} in` : "Scherp linksaf";
     case "sharp_right": return road ? `Scherp rechtsaf, de ${road} in` : "Scherp rechtsaf";
     case "uturn": return "Keer om";
-    case "roundabout": return road ? `Op de rotonde de ${road} op` : "Neem de rotonde";
+    case "roundabout": {
+      const nth = exit && exit > 0 ? `neem de ${ordinal(exit)} afslag` : null;
+      if (nth && road) return `Op de rotonde ${nth}, de ${road} op`;
+      if (nth) return `Op de rotonde ${nth}`;
+      return road ? `Op de rotonde de ${road} op` : "Neem de rotonde";
+    }
     case "arrive": return "Je bent op de bestemming";
     default: return road ? `Volg de ${road}` : "";
   }
@@ -54,7 +64,7 @@ export function dirFromTakeAngle(take: number): string {
 }
 
 export type RouteProfile = "car" | "bike" | "foot" | "boat";
-type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[] };
+type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[]; roundabouts: (number | null)[] };
 
 // Straight lines between the waypoints — used for "varen" (no road/water routing
 // network) and as the fallback when routing fails.
@@ -72,6 +82,7 @@ function straightRoute(waypoints: LL[]): RouteResult {
     legGeoms,
     junctions: new Array(n).fill(null),
     streets: new Array(n).fill(null),
+    roundabouts: new Array(n).fill(null),
   };
 }
 
@@ -103,7 +114,8 @@ export async function fetchRoadRoute(
     if (!r) return null;
     const route = (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
     type RawInter = { location?: [number, number]; bearings?: number[]; in?: number; out?: number };
-    type RawStep = { geometry?: { coordinates: [number, number][] }; intersections?: RawInter[]; name?: string };
+    type RawManeuver = { type?: string; modifier?: string; exit?: number; location?: [number, number] };
+    type RawStep = { geometry?: { coordinates: [number, number][] }; intersections?: RawInter[]; name?: string; maneuver?: RawManeuver; exit?: number };
     const rawLegs = (r.legs ?? []) as { distance: number; steps?: RawStep[] }[];
     const legs = rawLegs.map((l) => Math.round(l.distance));
     const legGeoms: [number, number][][] = rawLegs.map((l) => {
@@ -130,6 +142,24 @@ export async function fetchRoadRoute(
         }
       }
     }
+    // Roundabouts along the route: every roundabout/rotary maneuver with its
+    // entry location and the exit number to take (OSRM puts the exit count on the
+    // step, or on the maneuver in some builds). We match these to turn points so a
+    // clicked point on a roundabout becomes a real "take the Nth exit" step
+    // instead of an angle-guessed slight turn.
+    type Round = { lat: number; lng: number; exit: number | null };
+    const rounds: Round[] = [];
+    for (const l of rawLegs) {
+      for (const s of l.steps ?? []) {
+        const t = s.maneuver?.type ?? "";
+        if (!/roundabout|rotary/i.test(t)) continue;
+        const loc = s.maneuver?.location;
+        if (!loc) continue;
+        const exit = typeof s.exit === "number" ? s.exit : typeof s.maneuver?.exit === "number" ? s.maneuver.exit : null;
+        rounds.push({ lat: loc[1], lng: loc[0], exit });
+      }
+    }
+
     // OSRM's snapped waypoint locations (used as the search anchor per turn point).
     const snapped = ((data.waypoints ?? []) as { location?: [number, number] }[]).map((w) => w.location);
 
@@ -138,12 +168,21 @@ export async function fetchRoadRoute(
     // routebook: "sla links af de <straat> in").
     const junctions: (Junction | null)[] = [];
     const streets: (string | null)[] = [];
+    const roundabouts: (number | null)[] = [];
     for (let wi = 1; wi < waypoints.length - 1; wi++) {
       // the road entered after this waypoint = first step of the leg leaving it
       const nm = rawLegs[wi]?.steps?.find((s) => s.name && s.name.trim())?.name?.trim() || null;
       streets.push(nm);
       const loc = snapped[wi];
       const target: LL = loc ? { lat: loc[1], lng: loc[0] } : waypoints[wi];
+      // Is this turn point on a roundabout? Nearest roundabout entry within 60 m.
+      let rbBest: Round | null = null;
+      let rbDist = Infinity;
+      for (const r of rounds) {
+        const d = haversine(target, { lat: r.lat, lng: r.lng });
+        if (d <= 60 && d < rbDist) { rbDist = d; rbBest = r; }
+      }
+      roundabouts.push(rbBest ? (rbBest.exit ?? 0) : null);
       // Nearest junction within 70 m, preferring real junctions (more roads).
       let best: Node | null = null;
       let bestScore = -Infinity;
@@ -159,7 +198,7 @@ export async function fetchRoadRoute(
       const rot = (b: number) => Math.round((((b - inB + 180) % 360) + 360) % 360);
       junctions.push({ roads: best.bearings.map(rot), take: rot(best.bearings[best.out]) });
     }
-    return { route, legs, legGeoms, junctions, streets };
+    return { route, legs, legGeoms, junctions, streets, roundabouts };
   } catch {
     return null;
   } finally {
