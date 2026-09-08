@@ -217,15 +217,29 @@ export async function fetchRoadRoute(
       streets.push(nm);
       const loc = snapped[wi];
       const target: LL = loc ? { lat: loc[1], lng: loc[0] } : waypoints[wi];
-      // Nearest junction within 70 m, preferring real junctions (more roads).
+      // Geometry direction of the maneuver here: approach heading vs departure
+      // heading (0 = straight, 90 = right, 270 = left). Same convention as a
+      // junction's take, so we can pick the junction node that actually matches
+      // where the route goes — a parallel/frontage-road crossing (straight) right
+      // next to the real turn must not win over the turn itself.
+      const gInB = bearingIntoEnd(legGeoms[wi - 1] ?? []);
+      const gOutB = bearingFromStart(legGeoms[wi] ?? []);
+      const gTurn = gInB != null && gOutB != null ? (((gOutB - gInB) % 360) + 360) % 360 : null;
+      const circDiff = (x: number, y: number) => Math.abs((((x - y) % 360) + 540) % 360 - 180); // 0..180
+      // Nearest junction within 70 m; prefer the node whose turn matches the
+      // route geometry, then more roads, then nearer.
       let best: Node | null = null;
-      let bestScore = -Infinity;
+      let bestKey = -Infinity;
       let bestDist = Infinity;
       for (const n of nodes) {
         const d = haversine(target, { lat: n.lat, lng: n.lng });
         if (d > 70) continue;
-        const score = n.bearings.length * 1000 - d; // more roads wins; then nearer
-        if (score > bestScore) { bestScore = score; best = n; bestDist = d; }
+        let key = n.bearings.length * 1000 - d; // fallback: more roads, then nearer
+        if (gTurn != null && n.in >= 0 && n.out >= 0 && typeof n.bearings[n.in] === "number" && typeof n.bearings[n.out] === "number") {
+          const nodeTake = (((n.bearings[n.out] - n.bearings[n.in] + 180) % 360) + 360) % 360;
+          key = -circDiff(nodeTake, gTurn) * 100 + n.bearings.length - d / 100;
+        }
+        if (key > bestKey) { bestKey = key; best = n; bestDist = d; }
       }
       // Is this turn point on a roundabout? Nearest roundabout entry within 45 m.
       // Only let it win when it's at least as close as the plain junction — a real
