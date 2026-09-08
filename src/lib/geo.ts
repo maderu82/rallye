@@ -185,14 +185,28 @@ export async function fetchRoadRoute(
       streets.push(nm);
       const loc = snapped[wi];
       const target: LL = loc ? { lat: loc[1], lng: loc[0] } : waypoints[wi];
-      // Is this turn point on a roundabout? Nearest roundabout entry within 60 m.
+      // Nearest junction within 70 m, preferring real junctions (more roads).
+      let best: Node | null = null;
+      let bestScore = -Infinity;
+      let bestDist = Infinity;
+      for (const n of nodes) {
+        const d = haversine(target, { lat: n.lat, lng: n.lng });
+        if (d > 70) continue;
+        const score = n.bearings.length * 1000 - d; // more roads wins; then nearer
+        if (score > bestScore) { bestScore = score; best = n; bestDist = d; }
+      }
+      // Is this turn point on a roundabout? Nearest roundabout entry within 45 m.
+      // Only let it win when it's at least as close as the plain junction — a real
+      // junction right at the point (e.g. a normal left turn) must not be swallowed
+      // by a roundabout a bit further along the route.
       let rbBest: Round | null = null;
       let rbDist = Infinity;
       for (const r of rounds) {
         const d = haversine(target, { lat: r.lat, lng: r.lng });
-        if (d <= 60 && d < rbDist) { rbDist = d; rbBest = r; }
+        if (d <= 45 && d < rbDist) { rbDist = d; rbBest = r; }
       }
-      if (rbBest) {
+      const isRound = rbBest != null && rbDist <= bestDist + 8;
+      if (isRound && rbBest) {
         // Prefer OSRM's real entry/exit headings. Fall back to the route geometry
         // around this point when the maneuver lacks bearings (heading arriving at
         // wi vs heading leaving wi). 0 = straight through, +90 = right, 270 = left.
@@ -205,15 +219,6 @@ export async function fetchRoadRoute(
         roundabouts.push({ exit: rbBest.exit, take });
       } else {
         roundabouts.push(null);
-      }
-      // Nearest junction within 70 m, preferring real junctions (more roads).
-      let best: Node | null = null;
-      let bestScore = -Infinity;
-      for (const n of nodes) {
-        const d = haversine(target, { lat: n.lat, lng: n.lng });
-        if (d > 70) continue;
-        const score = n.bearings.length * 1000 - d; // more roads wins; then nearer
-        if (score > bestScore) { bestScore = score; best = n; }
       }
       if (!best || best.in < 0 || best.out < 0) { junctions.push(null); continue; }
       // Rotate so the road we came in on points down (180°); mark the exit road.
