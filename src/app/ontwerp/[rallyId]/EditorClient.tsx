@@ -1425,10 +1425,16 @@ function legIncomplete(l: Leg): boolean {
       return false; // no per-step instructions needed
     case "line":
       return !(Array.isArray(l.turn_route) && l.turn_route.length >= 2);
-    case "photo_nav":
-      return steps.length === 0 || steps.some((s) => !s.photo);
-    case "cryptic":
-      return steps.length === 0 || steps.some((s) => !(s.note ?? "").trim());
+    case "photo_nav": {
+      // The last step is "arrive" (the destination) — it never carries a photo,
+      // so only the real junction steps must have one.
+      const real = steps.filter((s) => s.dir !== "arrive");
+      return real.length === 0 || real.some((s) => !s.photo);
+    }
+    case "cryptic": {
+      const real = steps.filter((s) => s.dir !== "arrive");
+      return real.length === 0 || real.some((s) => !(s.note ?? "").trim());
+    }
     case "turn":
     case "dakar":
     case "routebook":
