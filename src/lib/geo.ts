@@ -22,6 +22,12 @@ export interface Junction {
   take: number; // screen angle of the road to take
 }
 
+/** A roundabout hit at a turn point: which exit to take + its tulip angle. */
+export interface RoundInfo {
+  exit: number | null; // 1-based exit number (null = OSRM didn't say)
+  take: number | null; // screen angle of the exit road (0 = straight through)
+}
+
 /** Ordinal for a roundabout exit: 1 → "1e", 2 → "2e", … */
 function ordinal(n: number): string {
   return `${n}e`;
@@ -64,7 +70,7 @@ export function dirFromTakeAngle(take: number): string {
 }
 
 export type RouteProfile = "car" | "bike" | "foot" | "boat";
-type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[]; roundabouts: (number | null)[] };
+type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[]; roundabouts: (RoundInfo | null)[] };
 
 // Straight lines between the waypoints — used for "varen" (no road/water routing
 // network) and as the fallback when routing fails.
@@ -114,7 +120,7 @@ export async function fetchRoadRoute(
     if (!r) return null;
     const route = (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
     type RawInter = { location?: [number, number]; bearings?: number[]; in?: number; out?: number };
-    type RawManeuver = { type?: string; modifier?: string; exit?: number; location?: [number, number] };
+    type RawManeuver = { type?: string; modifier?: string; exit?: number; location?: [number, number]; bearing_before?: number; bearing_after?: number };
     type RawStep = { geometry?: { coordinates: [number, number][] }; intersections?: RawInter[]; name?: string; maneuver?: RawManeuver; exit?: number };
     const rawLegs = (r.legs ?? []) as { distance: number; steps?: RawStep[] }[];
     const legs = rawLegs.map((l) => Math.round(l.distance));
@@ -147,7 +153,7 @@ export async function fetchRoadRoute(
     // step, or on the maneuver in some builds). We match these to turn points so a
     // clicked point on a roundabout becomes a real "take the Nth exit" step
     // instead of an angle-guessed slight turn.
-    type Round = { lat: number; lng: number; exit: number | null };
+    type Round = { lat: number; lng: number; exit: number | null; take: number | null };
     const rounds: Round[] = [];
     for (const l of rawLegs) {
       for (const s of l.steps ?? []) {
@@ -156,7 +162,11 @@ export async function fetchRoadRoute(
         const loc = s.maneuver?.location;
         if (!loc) continue;
         const exit = typeof s.exit === "number" ? s.exit : typeof s.maneuver?.exit === "number" ? s.maneuver.exit : null;
-        rounds.push({ lat: loc[1], lng: loc[0], exit });
+        // OSRM gives the true entry/exit travel headings for a roundabout step;
+        // take = (exit heading − entry heading), 0 = straight through, +90 = right.
+        const bb = s.maneuver?.bearing_before, ba = s.maneuver?.bearing_after;
+        const take = typeof bb === "number" && typeof ba === "number" ? (((ba - bb) % 360) + 360) % 360 : null;
+        rounds.push({ lat: loc[1], lng: loc[0], exit, take });
       }
     }
 
@@ -168,7 +178,7 @@ export async function fetchRoadRoute(
     // routebook: "sla links af de <straat> in").
     const junctions: (Junction | null)[] = [];
     const streets: (string | null)[] = [];
-    const roundabouts: (number | null)[] = [];
+    const roundabouts: (RoundInfo | null)[] = [];
     for (let wi = 1; wi < waypoints.length - 1; wi++) {
       // the road entered after this waypoint = first step of the leg leaving it
       const nm = rawLegs[wi]?.steps?.find((s) => s.name && s.name.trim())?.name?.trim() || null;
@@ -182,7 +192,20 @@ export async function fetchRoadRoute(
         const d = haversine(target, { lat: r.lat, lng: r.lng });
         if (d <= 60 && d < rbDist) { rbDist = d; rbBest = r; }
       }
-      roundabouts.push(rbBest ? (rbBest.exit ?? 0) : null);
+      if (rbBest) {
+        // Prefer OSRM's real entry/exit headings. Fall back to the route geometry
+        // around this point when the maneuver lacks bearings (heading arriving at
+        // wi vs heading leaving wi). 0 = straight through, +90 = right, 270 = left.
+        let take = rbBest.take;
+        if (take == null) {
+          const inB = bearingIntoEnd(legGeoms[wi - 1] ?? []);
+          const outB = bearingFromStart(legGeoms[wi] ?? []);
+          take = inB != null && outB != null ? (((outB - inB) % 360) + 360) % 360 : null;
+        }
+        roundabouts.push({ exit: rbBest.exit, take });
+      } else {
+        roundabouts.push(null);
+      }
       // Nearest junction within 70 m, preferring real junctions (more roads).
       let best: Node | null = null;
       let bestScore = -Infinity;

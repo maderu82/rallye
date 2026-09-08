@@ -39,14 +39,28 @@ export default function TulipGlyph({ dir, roads, take, exit, size = 52 }: { dir:
   }
 
   if (dir === "roundabout") {
+    // Circle at (cx,cy); enter from the bottom; leave along the real exit angle
+    // (take: 0 = straight through / up, +90 = right, −90/270 = left).
+    const cx = 30, cy = 26, r = 11;
+    const a = (((typeof take === "number" ? take : 0) * Math.PI) / 180);
+    const edge = (l: number) => [cx + l * Math.sin(a), cy - l * Math.cos(a)] as const;
+    const [sx, sy] = edge(r);        // where the exit leaves the ring
+    const [ex, ey] = edge(r + 11);   // arrow tip
+    const wing = 5, w1 = a + Math.PI - 0.5, w2 = a + Math.PI + 0.5;
     return (
       <svg viewBox="0 0 60 60" width={size} height={size} aria-hidden>
-        <line x1="30" y1="58" x2="30" y2="42" stroke={purple} strokeWidth="3.5" strokeLinecap="round" />
-        <circle cx="30" cy="27" r="12" fill="none" stroke={purple} strokeWidth="3.5" />
-        <path d="M42 22 l6 -3 l-2 7 z" fill={purple} />
-        <circle cx="30" cy="42" r="5" fill={ball} />
+        {/* entry spoke from the bottom into the ring */}
+        <line x1="30" y1="58" x2={cx} y2={cy + r} stroke={purple} strokeWidth="3.5" strokeLinecap="round" />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={purple} strokeWidth="3.5" />
+        {/* exit spoke at the true angle, with an arrowhead */}
+        <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={purple} strokeWidth="3.5" strokeLinecap="round" />
+        <polyline
+          points={`${ex + wing * Math.sin(w1)},${ey - wing * Math.cos(w1)} ${ex},${ey} ${ex + wing * Math.sin(w2)},${ey - wing * Math.cos(w2)}`}
+          fill="none" stroke={purple} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"
+        />
+        <circle cx={cx} cy={cy + r + 4} r="4.5" fill={ball} />
         {exit && exit > 0 ? (
-          <text x="30" y="27" textAnchor="middle" dominantBaseline="central" fontSize="13" fontWeight="700" fill={purple}>{exit}</text>
+          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize="12" fontWeight="700" fill={purple}>{exit}</text>
         ) : null}
       </svg>
     );

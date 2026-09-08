@@ -168,7 +168,7 @@ export default function EditorClient({
         const isRound = rb != null;
         const dir = isRound ? "roundabout" : jn ? dirFromTakeAngle(jn.take) : smartDirs?.[i] ?? a.dir;
         let note = pd?.note ?? "";
-        if (leg.nav_mode === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb : undefined);
+        if (leg.nav_mode === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb.exit ?? undefined : undefined);
         return {
           dist: a.dist,
           dir,
@@ -178,7 +178,9 @@ export default function EditorClient({
           ...(pd?.picto ? { picto: pd.picto } : {}),
           ...(pd?.danger ? { danger: pd.danger } : {}),
           ...(street ? { street } : {}),
-          ...(isRound ? { exit: rb } : jn ? { roads: jn.roads, take: jn.take } : {}),
+          ...(isRound
+            ? { exit: rb.exit ?? 0, ...(rb.take != null ? { take: rb.take } : {}) }
+            : jn ? { roads: jn.roads, take: jn.take } : {}),
         };
       });
       const res = await updateLeg(rally.id, leg.id, { turn_steps: merged, turn_route: road.route });
@@ -1078,7 +1080,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       // Routebook: auto-write the instruction from the street name when the note
       // is still empty (e.g. "Sla linksaf, de Wouter van den Walestraat in").
       let note = pd?.note ?? "";
-      if (variant === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb : undefined);
+      if (variant === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb.exit ?? undefined : undefined);
       return {
         dist: a.dist,
         dir,
@@ -1087,7 +1089,9 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         ...(pd?.picto ? { picto: pd.picto } : {}),
         ...(pd?.danger ? { danger: pd.danger } : {}),
         ...(street ? { street } : {}),
-        ...(isRound ? { exit: rb } : jn ? { roads: jn.roads, take: jn.take } : {}),
+        ...(isRound
+          ? { exit: rb.exit ?? 0, ...(rb.take != null ? { take: rb.take } : {}) }
+          : jn ? { roads: jn.roads, take: jn.take } : {}),
       };
     });
     run(() => updateLeg(rallyId, leg.id, { turn_points: nextPoints, turn_steps: merged, turn_route: road?.route ?? [] }));
