@@ -23,7 +23,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL, ROUTE_PROFILES } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { autoTurns, bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, nearestRoadDistance, roadbookDirsFromGeom, routebookPhrase, streetnamesPhrase, type RouteProfile } from "@/lib/geo";
+import { autoTurns, bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, hasDetour, haversine, nearestRoadDistance, roadbookDirsFromGeom, routebookPhrase, smartSnap, streetnamesPhrase, type RouteProfile } from "@/lib/geo";
 import {
   addLeg,
   addPoint,
@@ -1098,9 +1098,20 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   // suggested direction). This is the key: dragging or adding a point never
   // overwrites directions you already set.
   async function reroute(nextPoints: { lat: number; lng: number }[], perPoint: { dir?: string; note?: string; photo?: string; picto?: string; danger?: number }[], profile?: string) {
-    const p = [start, ...nextPoints, end].filter(Boolean) as { lat: number; lng: number }[];
+    let p = [start, ...nextPoints, end].filter(Boolean) as { lat: number; lng: number }[];
+    const prof = (profile ?? leg.route_profile ?? "car") as RouteProfile;
     setRouting(true);
-    const road = await fetchRoadRoute(p, (profile ?? leg.route_profile ?? "car") as RouteProfile);
+    let road = await fetchRoadRoute(p, prof);
+    // A route drawn on the wrong side of water = a point snapped to the far bank.
+    // Only when the route makes a clear detour do we spend the extra OSRM calls to
+    // re-snap the offending point(s) to the road that avoids the bridge detour.
+    if (road && hasDetour(p, road.legs)) {
+      const fixed = await smartSnap(p, prof);
+      if (fixed) {
+        const road2 = await fetchRoadRoute(fixed, prof);
+        if (road2) { p = fixed; road = road2; }
+      }
+    }
     setRouting(false);
     setRouteFailed(p.length >= 2 && road == null);
     // Flag a point that snapped far from any road — the usual cause of a route
@@ -1210,7 +1221,13 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     if (!start || !end) return;
     if (turnPoints.length > 0 && !confirm("Alle huidige punten vervangen door de automatisch gevonden afslagen op de route?")) return;
     setRouting(true);
-    const res = await autoTurns([start, ...turnPoints, end], profile as RouteProfile);
+    let wp = [start, ...turnPoints, end] as { lat: number; lng: number }[];
+    const probe = await fetchRoadRoute(wp, profile as RouteProfile);
+    if (probe && hasDetour(wp, probe.legs)) {
+      const fixed = await smartSnap(wp, profile as RouteProfile);
+      if (fixed) wp = fixed;
+    }
+    const res = await autoTurns(wp, profile as RouteProfile);
     setRouting(false);
     if (!res) { setRouteFailed(true); return; }
     const pts = res.turns.map((t) => ({ lat: t.lat, lng: t.lng }));

@@ -173,6 +173,92 @@ export async function nearestRoadDistance(p: LL, profile: RouteProfile = "car"):
   }
 }
 
+/** Total road distance (m) of a route through `coords`, or null. overview off. */
+async function osrmRouteDistance(coords: LL[], profile: RouteProfile): Promise<number | null> {
+  if (coords.length < 2) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const c = coords.map((w) => `${w.lng},${w.lat}`).join(";");
+    const res = await fetch(`${osrmHost(profile)}/route/v1/driving/${c}?overview=false`, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const d = data.routes?.[0]?.distance;
+    return typeof d === "number" ? d : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The N nearest road snap points to `p` (candidate roads to snap onto). */
+async function nearestCandidates(p: LL, profile: RouteProfile, n = 6): Promise<LL[]> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(`${osrmHost(profile)}/nearest/v1/driving/${p.lng},${p.lat}?number=${n}`, { signal: ctrl.signal });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return ((data.waypoints ?? []) as { location?: [number, number] }[])
+      .map((w) => w.location)
+      .filter((l): l is [number, number] => Array.isArray(l))
+      .map((l) => ({ lat: l[1], lng: l[0] }));
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** True when some leg's road distance dwarfs the straight line — the signature
+ * of a point snapped to the wrong side of water (a long bridge detour). */
+export function hasDetour(waypoints: LL[], legs: number[]): boolean {
+  for (let i = 0; i < legs.length && i + 1 < waypoints.length; i++) {
+    const straight = haversine(waypoints[i], waypoints[i + 1]);
+    if (straight > 40 && legs[i] > straight * 2.5 + 150) return true;
+  }
+  return false;
+}
+
+/**
+ * Fix points that snapped to the wrong road (typically the far bank of water):
+ * OSRM always takes the NEAREST road, which near narrow water can be the wrong
+ * side. For each point we fetch several candidate roads and keep the one whose
+ * route to the neighbours is clearly shorter — i.e. the one that doesn't force a
+ * bridge detour. Only adopted when a candidate beats the nearest by a wide
+ * margin, so good snaps are never nudged. Returns adjusted coordinates for
+ * routing, or null when nothing needed changing.
+ */
+export async function smartSnap(waypoints: LL[], profile: RouteProfile = "car"): Promise<LL[] | null> {
+  if (profile === "boat" || waypoints.length < 2) return null;
+  const adjusted = waypoints.slice();
+  let changed = false;
+  for (let i = 0; i < adjusted.length; i++) {
+    const prev = i > 0 ? adjusted[i - 1] : null;
+    const next = i < adjusted.length - 1 ? waypoints[i + 1] : null;
+    if (!prev && !next) continue;
+    const cands = await nearestCandidates(adjusted[i], profile);
+    if (cands.length < 2) continue;
+    let best: LL = adjusted[i];
+    let bestCost = Infinity;
+    let baseCost = Infinity;
+    for (let ci = 0; ci < cands.length; ci++) {
+      const legCoords = [prev, cands[ci], next].filter(Boolean) as LL[];
+      const dist = await osrmRouteDistance(legCoords, profile);
+      if (dist == null) continue;
+      if (ci === 0) baseCost = dist; // nearest = current behaviour
+      if (dist < bestCost) { bestCost = dist; best = cands[ci]; }
+    }
+    // Adopt only a clearly better road (>40% shorter) — a real wrong-side snap.
+    if (baseCost < Infinity && bestCost < baseCost * 0.6 && best !== adjusted[i]) {
+      adjusted[i] = best;
+      changed = true;
+    }
+  }
+  return changed ? adjusted : null;
+}
+
 export async function fetchRoadRoute(
   waypoints: LL[],
   profile: RouteProfile = "car",
