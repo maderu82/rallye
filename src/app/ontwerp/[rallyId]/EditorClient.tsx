@@ -1274,6 +1274,15 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     await reroute(newTurns, newPer);
   }
 
+  // Wipe every point of this leg so the organizer can start over.
+  const clearAllPoints = () => {
+    if (turnPoints.length === 0) return;
+    if (!confirm(`Alle ${turnPoints.length} punten van dit traject wissen? De aanwijzingen en het getekende spoor verdwijnen.`)) return;
+    setSnapWarn(null);
+    setRouteFailed(false);
+    run(() => updateLeg(rallyId, leg.id, { turn_points: [], turn_steps: [], turn_route: [] }));
+  };
+
   const addPointAt = (lat: number, lng: number) => void reroute([...turnPoints, { lat, lng }], [...curPerPoint(), {}]);
   const movePointAt = (i: number, lat: number, lng: number) =>
     void reroute(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)), curPerPoint());
@@ -1322,6 +1331,9 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         <button className="btn btn-ghost text-sm" title="Loopt de route start→finish al goed? Laat de app alle afslagen automatisch invullen." onClick={() => void autoFillTurns()}>
           ✨ Alle afslagen automatisch invullen
         </button>
+      ) : null}
+      {turnPoints.length > 0 ? (
+        <button className="btn btn-ghost text-sm text-coral" title="Alle punten van dit traject wissen en opnieuw beginnen" onClick={clearAllPoints}>🗑️ Punten wissen</button>
       ) : null}
       {routing ? <span className="text-xs text-polder-grey">🛣️ route berekenen…</span> : null}
       {!routing && routeFailed ? <span className="text-xs text-coral">⚠️ routeserver even niet bereikbaar — rechte lijnen gebruikt. Klik &ldquo;Route bijwerken&rdquo; om opnieuw te proberen.</span> : null}
