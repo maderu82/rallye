@@ -230,15 +230,21 @@ export function hasDetour(waypoints: LL[], legs: number[]): boolean {
  * margin, so good snaps are never nudged. Returns adjusted coordinates for
  * routing, or null when nothing needed changing.
  */
-export async function smartSnap(waypoints: LL[], profile: RouteProfile = "car"): Promise<LL[] | null> {
+export async function smartSnap(
+  waypoints: LL[],
+  profile: RouteProfile = "car",
+  opts: { threshold?: number; candidates?: number } = {},
+): Promise<LL[] | null> {
   if (profile === "boat" || waypoints.length < 2) return null;
+  const threshold = opts.threshold ?? 0.6; // adopt a candidate only below this × nearest
+  const candidates = opts.candidates ?? 6;
   const adjusted = waypoints.slice();
   let changed = false;
   for (let i = 0; i < adjusted.length; i++) {
     const prev = i > 0 ? adjusted[i - 1] : null;
     const next = i < adjusted.length - 1 ? waypoints[i + 1] : null;
     if (!prev && !next) continue;
-    const cands = await nearestCandidates(adjusted[i], profile);
+    const cands = await nearestCandidates(adjusted[i], profile, candidates);
     if (cands.length < 2) continue;
     let best: LL = adjusted[i];
     let bestCost = Infinity;
@@ -250,8 +256,8 @@ export async function smartSnap(waypoints: LL[], profile: RouteProfile = "car"):
       if (ci === 0) baseCost = dist; // nearest = current behaviour
       if (dist < bestCost) { bestCost = dist; best = cands[ci]; }
     }
-    // Adopt only a clearly better road (>40% shorter) — a real wrong-side snap.
-    if (baseCost < Infinity && bestCost < baseCost * 0.6 && best !== adjusted[i]) {
+    // Adopt only a clearly better road — a real wrong-side snap, not a nudge.
+    if (baseCost < Infinity && bestCost < baseCost * threshold && best !== adjusted[i]) {
       adjusted[i] = best;
       changed = true;
     }

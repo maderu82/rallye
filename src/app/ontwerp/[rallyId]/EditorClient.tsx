@@ -1250,6 +1250,30 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     run(() => updateLeg(rallyId, leg.id, { turn_points: pts, turn_steps: newSteps, turn_route: res.route }));
   }
 
+  // Manual "put the route on the right side of the water": the organizer clicks
+  // this on a leg they can see runs along the wrong bank. It tries HARD (lower
+  // bar, more candidates) to re-snap every point to a road that avoids the water
+  // detour, and persists the corrected positions (moved points become real
+  // points; a moved start/end becomes a via) so the fix sticks.
+  async function fixToRoadside() {
+    if (!start || !end) return;
+    setRouting(true);
+    const wp = [start, ...turnPoints, end] as { lat: number; lng: number }[];
+    const fixed = await smartSnap(wp, profile as RouteProfile, { threshold: 0.85, candidates: 8 });
+    setRouting(false);
+    if (!fixed) {
+      setSnapWarn("Geen betere weg gevonden om naar over te stappen. Zet zelf een tussenpunt op de goede weg (één kruising verder).");
+      return;
+    }
+    const moved = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => haversine(a, b) > 1;
+    const mids = fixed.slice(1, fixed.length - 1);
+    const newTurns = [...mids];
+    const newPer: { dir?: string; note?: string; photo?: string; picto?: string; danger?: number }[] = [...curPerPoint()];
+    if (moved(fixed[0], start)) { newTurns.unshift(fixed[0]); newPer.unshift({}); }
+    if (moved(fixed[fixed.length - 1], end)) { newTurns.push(fixed[fixed.length - 1]); newPer.push({}); }
+    await reroute(newTurns, newPer);
+  }
+
   const addPointAt = (lat: number, lng: number) => void reroute([...turnPoints, { lat, lng }], [...curPerPoint(), {}]);
   const movePointAt = (i: number, lat: number, lng: number) =>
     void reroute(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)), curPerPoint());
@@ -1278,6 +1302,11 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         {addMode ? "📍 Klikken staat aan — klik op de kaart" : "➕ Punten klikken"}
       </button>
       <button className="btn btn-ghost text-sm" onClick={() => void reroute(turnPoints, curPerPoint())}>🛣️ Route bijwerken</button>
+      {start && end ? (
+        <button className="btn btn-ghost text-sm" title="Loopt de route langs de verkeerde kant van het water? Zet 'm op de weg die geen brug-omweg maakt." onClick={() => void fixToRoadside()}>
+          🌊 Corrigeer naar de juiste kant
+        </button>
+      ) : null}
       {["streets", "routebook", "turn", "dakar"].includes(variant) && start && end ? (
         <button className="btn btn-ghost text-sm" title="Loopt de route start→finish al goed? Laat de app alle afslagen automatisch invullen." onClick={() => void autoFillTurns()}>
           ✨ Alle afslagen automatisch invullen
