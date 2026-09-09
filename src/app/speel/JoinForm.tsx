@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { joinRally } from "@/lib/play/actions";
 
 type JoinState = { error?: string } | null;
@@ -11,6 +11,10 @@ async function action(_prev: JoinState, formData: FormData): Promise<JoinState> 
 
 export default function JoinForm() {
   const [state, formAction, pending] = useActionState<JoinState, FormData>(action, null);
+  // Only the part AFTER the fixed "RLY-" prefix is typed, so players can't
+  // mistype the prefix. The server re-applies "RLY-" (and tolerates a pasted
+  // full code), so we submit just the suffix.
+  const [suffix, setSuffix] = useState("7H2K");
 
   return (
     <form action={formAction} className="space-y-3">
@@ -18,14 +22,22 @@ export default function JoinForm() {
         <label className="field-label" htmlFor="joinCode">
           Teamcode
         </label>
-        <input
-          id="joinCode"
-          name="joinCode"
-          defaultValue="RLY-7H2K"
-          autoCapitalize="characters"
-          className="input text-center font-bold tracking-[2px]"
-          placeholder="RLY-XXXX"
-        />
+        <div className="flex items-stretch overflow-hidden rounded-soft border-2 border-polder-line focus-within:border-teal">
+          <span className="flex select-none items-center bg-paper px-3 font-bold tracking-[2px] text-polder-grey">RLY-</span>
+          <input
+            id="joinCode"
+            name="joinCode"
+            value={suffix}
+            onChange={(e) => setSuffix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8))}
+            inputMode="text"
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            className="w-full border-0 bg-white px-2 py-2 text-center font-bold tracking-[2px] outline-none"
+            placeholder="7H2K"
+          />
+        </div>
+        <p className="mt-1 text-[11px] text-polder-grey">Alleen het deel na &ldquo;RLY-&rdquo; invullen — die staat vast.</p>
       </div>
       <div>
         <label className="field-label" htmlFor="teamName">
