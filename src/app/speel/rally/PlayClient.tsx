@@ -88,6 +88,7 @@ const NAV_INTRO: Record<string, { icon: string; title: string; text: string }> =
   compass: { icon: "🧭", title: "Kompas", text: "Volg de pijl naar het punt. Draai tot de gekleurde pijl omhoog wijst (of rijd vooruit) en de afstand daalt." },
   turn: { icon: "↪️", title: "Bolletje-pijltje", text: "Volg de schema's stap voor stap: het bolletje is jij, de lijn toont de afslag. Vink af wat je gehad hebt." },
   routebook: { icon: "📖", title: "Routeboek", text: "Volg de geschreven aanwijzingen op volgorde tot je op de bestemming bent." },
+  streets: { icon: "🪧", title: "Straatnamen", text: "Navigeer op de straatnaamborden: bij elke kruising van twee straten sla je de aangegeven kant op. Geen afstanden — goed opletten dus. Vink af wat je gehad hebt." },
   cryptic: { icon: "🕵️", title: "Cryptische route", text: "Los het raadsel op en ga erheen. Pas als je op die plek bent, verschijnt de volgende aanwijzing." },
   photo_nav: { icon: "📷", title: "Foto-navigatie", text: "Zoek de plek van de foto. Ben je er, tik 'We zijn er!' — dan komt de volgende foto." },
   line: { icon: "📐", title: "De harde lijn", text: "Ouderwets kaartlezen: volg de getekende lijn van start naar finish. De gps begeleidt niet, maar meet wél mee — achteraf zie je hoeveel van de route je volgde en hoeveel punten dat oplevert." },
@@ -648,7 +649,7 @@ function WaypointView(props: {
   const done = assignment ? completed.has(assignment.id) : true;
   // Puzzle navigation modes hide the destination: the point name + note would
   // otherwise reveal where to go, so keep them hidden until the team arrives.
-  const hideDest = leg != null && ["turn", "routebook", "cryptic", "photo_nav", "dakar"].includes(leg.nav_mode);
+  const hideDest = leg != null && ["turn", "routebook", "streets", "cryptic", "photo_nav", "dakar"].includes(leg.nav_mode);
 
   return (
     <div>
@@ -670,7 +671,7 @@ function WaypointView(props: {
         />
       ) : null}
 
-      {leg && (leg.nav_mode === "line" || (["turn", "dakar", "cryptic", "photo_nav", "routebook"].includes(leg.nav_mode) && (leg.route_points ?? 0) > 0)) ? (
+      {leg && (leg.nav_mode === "line" || (["turn", "dakar", "cryptic", "photo_nav", "routebook", "streets"].includes(leg.nav_mode) && (leg.route_points ?? 0) > 0)) ? (
         <RouteScore leg={leg} target={point} testMode={testMode} onScored={onScored} toast={toast} />
       ) : null}
 
@@ -827,6 +828,26 @@ function LegNav({
                 </li>
               );
             })}
+          </ol>
+        ) : (
+          <ol className="list-decimal space-y-1 pl-5 text-sm leading-relaxed">
+            {(leg.steps ?? "").split("\n").filter(Boolean).map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ol>
+        )
+      ) : null}
+
+      {leg.nav_mode === "streets" ? (
+        (leg.turn_steps ?? []).filter((s) => s.dir !== "arrive").length > 0 ? (
+          <ol className="space-y-2">
+            {leg.turn_steps.filter((s) => s.dir !== "arrive").map((s, i) => (
+              <li key={i} onClick={() => toggle(i)} className={`flex cursor-pointer items-start gap-3 rounded-soft border-2 border-polder-line bg-white p-2.5 ${checked.has(i) ? "opacity-60" : ""}`}>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal text-xs font-bold text-white">{i + 1}</span>
+                <div className={`flex-1 font-semibold text-ink ${checked.has(i) ? "line-through" : ""}`}>{s.note || "—"}</div>
+                {checkDot(i)}
+              </li>
+            ))}
           </ol>
         ) : (
           <ol className="list-decimal space-y-1 pl-5 text-sm leading-relaxed">

@@ -92,7 +92,8 @@ export interface RoadbookStep {
   exit?: number; // roundabout: which exit to take (1-based); dir === "roundabout"
   picto?: string; // roadbook (Dakar): landmark pictogram id at this point
   danger?: number; // roadbook (Dakar): warning level 0=none, 1=let op, 2=gevaar
-  street?: string; // routebook: name of the road turned onto here (from the map)
+  street?: string; // routebook/streets: name of the road turned onto here (from the map)
+  from_street?: string; // streets: name of the road arrived on (the crossing X of X × Y)
 }
 
 export interface Team {

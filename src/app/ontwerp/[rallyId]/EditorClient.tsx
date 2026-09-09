@@ -23,7 +23,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL, ROUTE_PROFILES } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, nearestRoadDistance, roadbookDirsFromGeom, routebookPhrase, type RouteProfile } from "@/lib/geo";
+import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, nearestRoadDistance, roadbookDirsFromGeom, routebookPhrase, streetnamesPhrase, type RouteProfile } from "@/lib/geo";
 import {
   addLeg,
   addPoint,
@@ -161,6 +161,7 @@ export default function EditorClient({
         const jn = road.junctions?.[i];
         const rb = road.roundabouts?.[i];
         const street = road.streets?.[i] ?? undefined;
+        const fromStreet = road.fromStreets?.[i] ?? undefined;
         // Recompute is authoritative: re-derive the direction from the actual
         // junction the route takes, so the label matches the highlighted road.
         // A roundabout wins over a plain junction — it becomes a "take the Nth
@@ -175,6 +176,7 @@ export default function EditorClient({
         if (rescued && mv) dir = mv;
         let note = pd?.note ?? "";
         if (leg.nav_mode === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb.exit ?? undefined : undefined);
+        else if (leg.nav_mode === "streets" && !note.trim()) note = streetnamesPhrase(dir, fromStreet ?? null, street ?? null);
         return {
           dist: a.dist,
           dir,
@@ -184,6 +186,7 @@ export default function EditorClient({
           ...(pd?.picto ? { picto: pd.picto } : {}),
           ...(pd?.danger ? { danger: pd.danger } : {}),
           ...(street ? { street } : {}),
+          ...(fromStreet ? { from_street: fromStreet } : {}),
           ...(isRound
             ? { exit: rb.exit ?? 0, ...(rb.take != null ? { take: rb.take } : {}) }
             : rescued ? {} : jn ? { roads: jn.roads, take: jn.take } : {}),
@@ -804,6 +807,15 @@ function LegSettings({
 
       {leg.nav_mode === "routebook" ? <RoadbookEditor variant="routebook" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
+      {leg.nav_mode === "streets" ? (
+        <>
+          <div className="rounded-soft bg-teal-light p-3 text-[13px] text-teal-dark">
+            🪧 Spelers navigeren op <b>straatnaamborden</b>: per kruispunt de twee straten + de richting, <b>zonder afstand</b>. De app vult de kruising in vanaf de kaart; bij naamloze wegen typ je zelf een herkenningspunt.
+          </div>
+          <RoadbookEditor variant="streets" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} />
+        </>
+      ) : null}
+
       {leg.nav_mode === "turn" ? <RoadbookEditor variant="turn" rallyId={rallyId} leg={leg} fromPoint={fromPoint} toPoint={toPoint} run={run} /> : null}
 
       {leg.nav_mode === "dakar" ? (
@@ -815,7 +827,7 @@ function LegSettings({
         </>
       ) : null}
 
-      {["turn", "dakar", "cryptic", "photo_nav", "routebook"].includes(leg.nav_mode) ? (
+      {["turn", "dakar", "cryptic", "photo_nav", "routebook", "streets"].includes(leg.nav_mode) ? (
         <div className="grid grid-cols-2 gap-2 rounded-soft bg-paper p-3">
           <p className="col-span-2 text-sm font-bold text-teal-dark">🎯 Score voor het volgen van de route (optioneel)</p>
           <div>
@@ -977,7 +989,7 @@ function LegSettings({
 // Direction options offered in the per-point picker (arrive is automatic for the last point).
 const DIR_CHOICES = ROADBOOK_DIRS.filter((d) => d.id !== "arrive");
 
-type RbVariant = "turn" | "routebook" | "cryptic" | "photo_nav" | "line" | "dakar";
+type RbVariant = "turn" | "routebook" | "streets" | "cryptic" | "photo_nav" | "line" | "dakar";
 
 // Per-variant presentation of the same map-based step composer.
 const RB_CONFIG: Record<RbVariant, {
@@ -1004,6 +1016,13 @@ const RB_CONFIG: Record<RbVariant, {
     showArrow: true, arrowPrimary: false, showPhoto: false, showDist: true, showRadius: false,
     notePlaceholder: "aanwijzing, bijv. 'Ga linksaf de Kerkstraat in, volg tot de brug'",
     empty: "Nog geen punten. Zet ze op de kaart langs de route — voor elk punt schrijf je daarna de aanwijzing.",
+  },
+  streets: {
+    header: "Straatnamen — klik de kruispunten op de kaart; de kruising van 2 straten + richting wordt ingevuld",
+    listLabel: "Aanwijzingen (kruising X × Y + richting — spelers zien géén afstand)",
+    showArrow: false, arrowPrimary: false, showPhoto: false, showDist: false, showRadius: false,
+    notePlaceholder: "bijv. 'Op de kruising van de Dorpsstraat en de Kerklaan: linksaf' — of een herkenningspunt bij een naamloze weg",
+    empty: "Nog geen kruispunten. Zet ze op de kaart — per punt vult de app de kruising + richting in; bij naamloze wegen typ je zelf een herkenningspunt.",
   },
   cryptic: {
     header: "Cryptische route — klik de punten op de kaart, schrijf per punt een raadsel",
@@ -1099,6 +1118,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       const jn = road?.junctions?.[i];
       const rb = road?.roundabouts?.[i];
       const street = road?.streets?.[i] ?? undefined;
+      const fromStreet = road?.fromStreets?.[i] ?? undefined;
       const isRound = rb != null;
       // Newly placed points get the junction-accurate direction; a direction you
       // already chose is preserved (drag/add never overwrites your choice). A
@@ -1114,6 +1134,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       // is still empty (e.g. "Sla linksaf, de Wouter van den Walestraat in").
       let note = pd?.note ?? "";
       if (variant === "routebook" && !note.trim()) note = routebookPhrase(dir, street ?? null, isRound ? rb.exit ?? undefined : undefined);
+      else if (variant === "streets" && !note.trim()) note = streetnamesPhrase(dir, fromStreet ?? null, street ?? null);
       return {
         dist: a.dist,
         dir,
@@ -1122,6 +1143,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         ...(pd?.picto ? { picto: pd.picto } : {}),
         ...(pd?.danger ? { danger: pd.danger } : {}),
         ...(street ? { street } : {}),
+        ...(fromStreet ? { from_street: fromStreet } : {}),
         ...(isRound
           ? { exit: rb.exit ?? 0, ...(rb.take != null ? { take: rb.take } : {}) }
           : rescued && !pd?.dir ? {} : jn ? { roads: jn.roads, take: jn.take } : {}),
@@ -1293,7 +1315,9 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
               ? "⚠️ Nog geen foto bij dit punt — de speler ziet dan niets om te herkennen."
               : variant === "cryptic" && !(s?.note ?? "").trim()
                 ? "⚠️ Nog geen aanwijzing bij dit punt — vul de cryptische hint in."
-                : null;
+                : variant === "streets" && !(s?.note ?? "").trim()
+                  ? "⚠️ Naamloze weg — typ hier zelf een herkenningspunt + richting."
+                  : null;
             return (
               <div key={i} className={`rounded-soft border-2 p-2 ${warn ? "border-[#D85A30] bg-coral-light" : "border-polder-line"}`}>
                 <div className="mb-1.5 flex flex-wrap items-center gap-2">
@@ -1383,6 +1407,15 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                         🛣️ {s.street} — aanwijzing invullen
                       </button>
                     ) : null}
+                    {variant === "streets" && (s?.street || s?.from_street) ? (
+                      <button
+                        className="mt-1 text-[11px] font-semibold text-teal-dark underline"
+                        title="Vul de kruising + richting in vanaf de kaart"
+                        onClick={() => setStep(i, { note: streetnamesPhrase(s.dir, s.from_street ?? null, s.street ?? null) })}
+                      >
+                        🪧 {s.from_street && s.street ? `${s.from_street} × ${s.street}` : "kruising"} — aanwijzing invullen
+                      </button>
+                    ) : null}
                     {dirPicker ? (
                       <div className="mt-1.5">
                         <span className="mb-1 block text-[11px] font-semibold text-polder-grey">Richting (optionele pijl bij de aanwijzing)</span>
@@ -1464,7 +1497,8 @@ function legIncomplete(l: Leg): boolean {
       const real = steps.filter((s) => s.dir !== "arrive");
       return real.length === 0 || real.some((s) => !s.photo);
     }
-    case "cryptic": {
+    case "cryptic":
+    case "streets": {
       const real = steps.filter((s) => s.dir !== "arrive");
       return real.length === 0 || real.some((s) => !(s.note ?? "").trim());
     }
@@ -1998,6 +2032,7 @@ function legSummary(l: Leg): string {
   if (l.nav_mode === "line") return l.turn_route?.length ? `de harde lijn — kaartlezen (${l.route_points ?? 20} ptn)` : "de harde lijn — teken de route";
   if (l.nav_mode === "dakar") return l.turn_steps?.length ? `roadbook — ${l.turn_steps.length} regel${l.turn_steps.length === 1 ? "" : "s"}` : "roadbook nog invullen";
   if (l.nav_mode === "routebook" && l.turn_steps?.length) return `routeboek — ${l.turn_steps.length} aanwijzing${l.turn_steps.length === 1 ? "" : "en"}`;
+  if (l.nav_mode === "streets") return l.turn_steps?.length ? `straatnamen — ${l.turn_steps.length} kruispunt${l.turn_steps.length === 1 ? "" : "en"}` : "straatnamen nog invullen";
   const first = (l.steps ?? "").split("\n").filter(Boolean);
   return first.length ? `${first.length} instructie${first.length === 1 ? "" : "s"} — "${first[0]}"` : "instructies nog invullen";
 }

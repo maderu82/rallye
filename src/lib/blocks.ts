@@ -59,7 +59,7 @@ export const GRADING_LABEL: Record<Grading, string> = {
 };
 
 // ── Navigation modes per leg (§3.5A) ────────────────────────────────────────
-export type NavMode = "compass" | "routebook" | "turn" | "map" | "cryptic" | "photo_nav" | "line" | "dakar";
+export type NavMode = "compass" | "routebook" | "turn" | "map" | "cryptic" | "photo_nav" | "line" | "dakar" | "streets";
 
 export interface NavDef {
   mode: NavMode;
@@ -70,6 +70,7 @@ export interface NavDef {
 export const NAV_MODES: NavDef[] = [
   { mode: "compass", label: "Kompas (koers + afstand)", icon: "🧭" },
   { mode: "routebook", label: "Straatboek / routebeschrijving", icon: "📖" },
+  { mode: "streets", label: "Straatnamen (kruising X × Y + richting, geen afstand)", icon: "🪧" },
   { mode: "turn", label: "Bolletje-pijltje ('na 200 m rechts')", icon: "↪️" },
   { mode: "cryptic", label: "Cryptische route (herkenningspunten)", icon: "🕵️" },
   { mode: "photo_nav", label: "Foto-navigatie (kruispuntfoto's)", icon: "📷" },
