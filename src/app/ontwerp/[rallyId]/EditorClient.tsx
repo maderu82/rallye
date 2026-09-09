@@ -23,7 +23,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL, ROUTE_PROFILES } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, roadbookDirsFromGeom, routebookPhrase, type RouteProfile } from "@/lib/geo";
+import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, nearestRoadDistance, roadbookDirsFromGeom, routebookPhrase, type RouteProfile } from "@/lib/geo";
 import {
   addLeg,
   addPoint,
@@ -576,6 +576,27 @@ export default function EditorClient({
   );
 }
 
+// Warn when a point sits far from any routable road. The route snaps a point to
+// the nearest road, so a spot off the car network (a parking lot, a square) can
+// snap across water to the wrong side. The organizer then nudges it onto the
+// real road. Checked live against OSRM's `nearest` service.
+function SnapCheck({ lat, lng, isStart }: { lat: number | null; lng: number | null; isStart: boolean }) {
+  const [dist, setDist] = useState<number | null>(null);
+  useEffect(() => {
+    if (lat == null || lng == null) { setDist(null); return; }
+    let alive = true;
+    setDist(null);
+    void nearestRoadDistance({ lat, lng }).then((d) => { if (alive) setDist(d); });
+    return () => { alive = false; };
+  }, [lat, lng]);
+  if (dist == null || dist <= 40) return null;
+  return (
+    <p className="mt-1.5 rounded-soft bg-coral-light p-2.5 text-[12px] text-coral">
+      ⚠️ Dit {isStart ? "startpunt" : "punt"} ligt <b>±{Math.round(dist)} m van de dichtstbijzijnde weg</b>. De route snapt het naar die weg — met water in de buurt kan dat de <b>verkeerde kant</b> zijn. Versleep het naar de weg waarlangs teams echt rijden (bijv. de inrit van de parkeerplaats).
+    </p>
+  );
+}
+
 // ── settings: point ──────────────────────────────────────────────────────────
 function PointSettings({
   rallyId,
@@ -623,6 +644,7 @@ function PointSettings({
           <input defaultValue={point.lat ?? ""} className="input" placeholder="lat" onBlur={(e) => run(() => updatePoint(rallyId, point.id, { lat: e.target.value ? Number(e.target.value) : null }))} />
           <input defaultValue={point.lng ?? ""} className="input" placeholder="lng" onBlur={(e) => run(() => updatePoint(rallyId, point.id, { lng: e.target.value ? Number(e.target.value) : null }))} />
         </div>
+        <SnapCheck lat={point.lat} lng={point.lng} isStart={point.kind === "start"} />
       </div>
       <div>
         <label className="field-label">Toelichting bij deze locatie (optioneel)</label>

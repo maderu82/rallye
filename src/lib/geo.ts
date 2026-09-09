@@ -107,6 +107,37 @@ function straightRoute(waypoints: LL[]): RouteResult {
   };
 }
 
+/** OSRM host for a routing profile (car on the demo server; bike/foot on FOSSGIS). */
+function osrmHost(profile: RouteProfile): string {
+  return profile === "bike" ? "https://routing.openstreetmap.de/routed-bike"
+    : profile === "foot" ? "https://routing.openstreetmap.de/routed-foot"
+    : "https://router.project-osrm.org";
+}
+
+/**
+ * Straight-line distance (m) from a point to the nearest routable road, via
+ * OSRM's `nearest` service. A large value means the point (e.g. a parking lot)
+ * will snap to a far road — possibly across water — when the route is built.
+ * null on any failure (network, boat profile with no road network).
+ */
+export async function nearestRoadDistance(p: LL, profile: RouteProfile = "car"): Promise<number | null> {
+  if (profile === "boat") return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const url = `${osrmHost(profile)}/nearest/v1/driving/${p.lng},${p.lat}?number=1`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const wp = data.waypoints?.[0];
+    return typeof wp?.distance === "number" ? wp.distance : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchRoadRoute(
   waypoints: LL[],
   profile: RouteProfile = "car",
@@ -115,10 +146,7 @@ export async function fetchRoadRoute(
   // No road/water routing network for boats — draw straight lines instead.
   if (profile === "boat") return straightRoute(waypoints);
   // The public OSRM demo only has the car profile; FOSSGIS hosts foot & bike.
-  const host =
-    profile === "bike" ? "https://routing.openstreetmap.de/routed-bike"
-    : profile === "foot" ? "https://routing.openstreetmap.de/routed-foot"
-    : "https://router.project-osrm.org";
+  const host = osrmHost(profile);
   // Give up after 7s so a slow/overloaded public OSRM never hangs the editor;
   // callers fall back to straight lines when this returns null.
   const ctrl = new AbortController();
