@@ -579,6 +579,26 @@ export default function EditorClient({
   );
 }
 
+// Position input for a roadbook point: type the place in the order (1-based).
+// Keeps a local draft while typing and resets to the real position after a move.
+function PosInput({ pos, max, onSet }: { pos: number; max: number; onSet: (v: number) => void }) {
+  const [v, setV] = useState(String(pos));
+  useEffect(() => { setV(String(pos)); }, [pos]);
+  return (
+    <input
+      type="number"
+      min={1}
+      max={max}
+      value={v}
+      title="Typ de plek in de volgorde"
+      className="w-11 rounded border-2 border-polder-line px-1 py-0.5 text-center text-xs"
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { const n = Number(v); if (Number.isFinite(n) && n >= 1 && n <= max && n !== pos) onSet(n); else setV(String(pos)); }}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+    />
+  );
+}
+
 // Warn when a point sits far from any routable road. The route snaps a point to
 // the nearest road, so a spot off the car network (a parking lot, a square) can
 // snap across water to the wrong side. The organizer then nudges it onto the
@@ -1299,6 +1319,18 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     [per[i], per[j]] = [per[j], per[i]];
     void reroute(pts, per);
   };
+  // Move a point to a typed position (1-based); its instruction moves with it.
+  const movePointToPos = (i: number, pos1: number) => {
+    const target = Math.max(0, Math.min(turnPoints.length - 1, Math.round(pos1) - 1));
+    if (target === i) return;
+    const pts = turnPoints.slice();
+    const per = curPerPoint();
+    const [pt] = pts.splice(i, 1);
+    const [pe] = per.splice(i, 1);
+    pts.splice(target, 0, pt);
+    per.splice(target, 0, pe);
+    void reroute(pts, per);
+  };
 
   // Setting a direction / note doesn't move anything, so just save the steps.
   const setStep = (i: number, patch: Partial<RoadbookStep>) =>
@@ -1470,6 +1502,8 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                     </label>
                   ) : null}
                   <div className="ml-auto flex items-center gap-1">
+                    <span className="text-[11px] text-polder-grey">plek</span>
+                    <PosInput pos={i + 1} max={turnPoints.length} onSet={(v) => movePointToPos(i, v)} />
                     <button className="rounded border-2 border-polder-line px-1.5 py-1 text-xs disabled:opacity-30" title="Eerder in de volgorde" disabled={i === 0} onClick={() => movePointOrder(i, -1)}>▲</button>
                     <button className="rounded border-2 border-polder-line px-1.5 py-1 text-xs disabled:opacity-30" title="Later in de volgorde" disabled={i === turnPoints.length - 1} onClick={() => movePointOrder(i, 1)}>▼</button>
                     <button className="btn btn-danger px-2 py-1 text-xs" onClick={() => deletePointAt(i)}>✕ punt</button>
