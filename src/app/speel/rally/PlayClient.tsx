@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, DANGER_LABEL, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
-import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, scoreRoute, submitAnswer, submitAnswerWithPhoto, submitMedia, useEnrouteHint, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, scoreRoute, skipAssignment, submitAnswer, submitAnswerWithPhoto, submitMedia, useEnrouteHint, useHint } from "@/lib/play/actions";
 import { NEXT_STEP_COST } from "@/lib/play/constants";
 import TulipGlyph from "@/components/TulipGlyph";
 import RoadArrowGlyph from "@/components/RoadArrowGlyph";
@@ -1876,6 +1876,16 @@ function AssignmentCard({
   const [busy, setBusy] = useState(false);
   const cfg = assignment.public_config as Record<string, unknown>;
 
+  async function doSkip() {
+    setBusy(true);
+    const r = await skipAssignment(assignment.id);
+    setBusy(false);
+    if (r.error) { toast(r.error); return; }
+    onScored(r.score);
+    setFeedback({ ok: true, msg: r.feedback });
+    if (r.complete) onComplete();
+  }
+
   async function send(submission: Record<string, unknown>) {
     setBusy(true);
     const r = await submitAnswer(assignment.id, submission);
@@ -1986,6 +1996,17 @@ function AssignmentCard({
 
       {feedback ? (
         <div className={feedback.ok ? "feedback-ok mt-2.5" : "feedback-err mt-2.5"}>{feedback.msg}</div>
+      ) : null}
+
+      {/* After a wrong answer: retry (the form stays) or move on for a penalty. */}
+      {!done && feedback && !feedback.ok && assignment.skip_cost != null ? (
+        <div className="mt-2 rounded-soft border-2 border-polder-line bg-white p-2.5">
+          <p className="mb-1.5 text-[13px] font-semibold text-ink">Opnieuw proberen, of door naar de volgende opdracht?</p>
+          <button className="btn btn-danger w-full text-sm" onClick={doSkip} disabled={busy}>
+            ⏭️ Door naar de volgende opdracht {assignment.skip_cost > 0 ? `(−${assignment.skip_cost} ptn)` : "(gratis)"}
+          </button>
+          <p className="mt-1 text-[11px] text-polder-grey">Of pas je antwoord hierboven aan en probeer opnieuw.</p>
+        </div>
       ) : null}
 
       {/* Hint (all types except code_breaker, which has its own two-step help) */}

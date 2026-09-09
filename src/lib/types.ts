@@ -45,6 +45,7 @@ export interface Assignment {
   hint_mode: HintMode;
   hint_cost: number;
   hint_text: string | null;
+  skip_cost: number | null; // penalty to move on without solving; null = skipping not allowed
   prompt: string | null;
   public_config: Record<string, unknown>;
   solution: Record<string, unknown>; // server-only; stripped before reaching the browser

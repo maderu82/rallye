@@ -728,6 +728,23 @@ function PointSettings({
                   <input defaultValue={assignment.hint_text ?? ""} className="input" onBlur={(e) => run(() => updateAssignment(rallyId, point.id, { hint_text: e.target.value }))} />
                 </div>
               ) : null}
+              <div>
+                <label className="field-label">Doorgaan na fout antwoord</label>
+                <select
+                  defaultValue={assignment.skip_cost == null ? "off" : "on"}
+                  className="input"
+                  onChange={(e) => run(() => updateAssignment(rallyId, point.id, { skip_cost: e.target.value === "on" ? (assignment.skip_cost ?? 5) : null }))}
+                >
+                  <option value="off">Niet toegestaan — team blijft proberen</option>
+                  <option value="on">Team mag door naar de volgende opdracht</option>
+                </select>
+              </div>
+              {assignment.skip_cost != null ? (
+                <div>
+                  <label className="field-label">Strafpunten bij doorgaan (0 = gratis)</label>
+                  <input type="number" min={0} defaultValue={assignment.skip_cost} className="input" onBlur={(e) => run(() => updateAssignment(rallyId, point.id, { skip_cost: Math.max(0, Number(e.target.value) || 0) }))} />
+                </div>
+              ) : null}
               <label className="flex items-center gap-2.5 text-sm font-semibold">
                 <input type="checkbox" defaultChecked={point.gps_unlock} className="scale-125 accent-teal" onChange={(e) => run(() => updatePoint(rallyId, point.id, { gps_unlock: e.target.checked }))} />
                 Automatisch ontgrendelen bij aankomst (gps)

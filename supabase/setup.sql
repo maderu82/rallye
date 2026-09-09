@@ -67,12 +67,14 @@ create table if not exists public.assignments (
   hint_mode     text not null default 'off' check (hint_mode in ('off','free','cost')),
   hint_cost     int  not null default 5,
   hint_text     text,
+  skip_cost     int,
   prompt        text,
   public_config jsonb not null default '{}'::jsonb,
   solution      jsonb not null default '{}'::jsonb,
   created_at    timestamptz not null default now()
 );
 create index if not exists assignments_rally_idx on public.assignments (rally_id);
+alter table public.assignments add column if not exists skip_cost int;
 
 -- ─── legs ────────────────────────────────────────────────────────────────────
 create table if not exists public.legs (

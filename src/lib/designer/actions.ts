@@ -453,6 +453,7 @@ export async function updateAssignment(
     hint_mode: HintMode;
     hint_cost: number;
     hint_text: string;
+    skip_cost: number | null;
     prompt: string;
     grading: "auto" | "scale" | "manual";
     public_config: Record<string, unknown>;

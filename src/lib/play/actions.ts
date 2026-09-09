@@ -161,6 +161,52 @@ export async function submitAnswer(
   return { ok: result.ok, complete: result.complete, feedback: result.feedback, score: await scoreOf(db, team.id), badge: result.badge };
 }
 
+/**
+ * Give up on an assignment and move on to the next one, for the assignment's
+ * configured skip penalty. Only allowed when skip_cost is set (not null).
+ */
+export async function skipAssignment(assignmentId: string): Promise<ActionResult> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, complete: false, feedback: "", score: 0, error: "Geen actief team." };
+  const { team, db } = ctx;
+
+  const { data: assignment } = await db.from("assignments").select("*").eq("id", assignmentId).maybeSingle();
+  if (!assignment || assignment.rally_id !== team.rally_id) {
+    return { ok: false, complete: false, feedback: "", score: await scoreOf(db, team.id), error: "Opdracht niet gevonden." };
+  }
+  const a = assignment as Assignment;
+
+  if (await isCompleted(db, team.id, assignmentId)) {
+    return { ok: true, complete: true, feedback: "Deze opdracht is al voltooid.", score: await scoreOf(db, team.id) };
+  }
+  if (a.skip_cost == null) {
+    return { ok: false, complete: false, feedback: "", score: await scoreOf(db, team.id), error: "Doorgaan is niet toegestaan bij deze opdracht." };
+  }
+
+  const pen = Math.max(0, Math.round(a.skip_cost));
+  await db.from("team_events").insert({
+    team_id: team.id,
+    rally_id: team.rally_id,
+    assignment_id: a.id,
+    point_id: a.point_id,
+    kind: pen > 0 ? "penalty" : "assignment",
+    points_delta: -pen,
+    detail: { complete: true, skipped: true },
+  });
+
+  const { data: pt } = await db.from("points").select("position").eq("id", a.point_id).single();
+  if (pt) {
+    await db.from("teams").update({ current_index: Math.max(team.current_index, pt.position) }).eq("id", team.id);
+  }
+
+  return {
+    ok: true,
+    complete: true,
+    feedback: pen > 0 ? `Doorgegaan naar de volgende opdracht (−${pen} punten).` : "Doorgegaan naar de volgende opdracht.",
+    score: await scoreOf(db, team.id),
+  };
+}
+
 // ── video upload (direct-to-Storage via a signed URL) ────────────────────────
 // Videos are too big for the 8 MB server-action limit, so the browser uploads
 // straight to Storage using a short-lived signed URL, then calls submitMedia.
