@@ -1084,6 +1084,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
   const [expanded, setExpanded] = useState(false);
   const [routeFailed, setRouteFailed] = useState(false);
   const [routing, setRouting] = useState(false);
+  const [snapWarn, setSnapWarn] = useState<string | null>(null);
 
   // Steps aligned to the turn points (one per point). The final "arrive" step
   // (at the destination) is stored last but not shown as an editable point.
@@ -1102,6 +1103,20 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     const road = await fetchRoadRoute(p, (profile ?? leg.route_profile ?? "car") as RouteProfile);
     setRouting(false);
     setRouteFailed(p.length >= 2 && road == null);
+    // Flag a point that snapped far from any road — the usual cause of a route
+    // drawn on the wrong side of water. p = [start, …clicked points…, end].
+    if (road?.snapDist?.length) {
+      let worstI = -1, worst = 0;
+      road.snapDist.forEach((d, i) => { if (d > worst) { worst = d; worstI = i; } });
+      const hasStart = !!start;
+      const label = worstI < 0 ? ""
+        : worstI === 0 && hasStart ? "het startpunt"
+        : worstI === p.length - 1 && end ? "het eindpunt"
+        : `tussenpunt ${hasStart ? worstI : worstI + 1}`;
+      setSnapWarn(worst > 40 ? `⚠️ ${label} ligt ±${worst} m van de weg — de route kan aan de verkeerde kant van het water lopen. Versleep dat punt naar de juiste weg.` : null);
+    } else {
+      setSnapWarn(null);
+    }
     const auto = deriveRoadbook(p, [], road?.legs); // nextPoints.length + 1 entries (last = arrive)
     // Prefer the real road-angle suggestion from the leg geometry; fall back to
     // the straight-line derivation when routing failed.
@@ -1253,6 +1268,7 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
       ) : null}
       {routing ? <span className="text-xs text-polder-grey">🛣️ route berekenen…</span> : null}
       {!routing && routeFailed ? <span className="text-xs text-coral">⚠️ routeserver even niet bereikbaar — rechte lijnen gebruikt. Klik &ldquo;Route bijwerken&rdquo; om opnieuw te proberen.</span> : null}
+      {!routing && !routeFailed && snapWarn ? <span className="w-full text-xs font-semibold text-coral">{snapWarn}</span> : null}
     </div>
   );
 

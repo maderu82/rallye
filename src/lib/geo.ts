@@ -117,7 +117,7 @@ export function dirFromTakeAngle(take: number): string {
 }
 
 export type RouteProfile = "car" | "bike" | "foot" | "boat";
-type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[]; fromStreets: (string | null)[]; roundabouts: (RoundInfo | null)[]; maneuvers: (string | null)[] };
+type RouteResult = { route: [number, number][]; legs: number[]; legGeoms: [number, number][][]; junctions: (Junction | null)[]; streets: (string | null)[]; fromStreets: (string | null)[]; roundabouts: (RoundInfo | null)[]; maneuvers: (string | null)[]; snapDist: number[] };
 
 // Straight lines between the waypoints — used for "varen" (no road/water routing
 // network) and as the fallback when routing fails.
@@ -138,6 +138,7 @@ function straightRoute(waypoints: LL[]): RouteResult {
     fromStreets: new Array(n).fill(null),
     roundabouts: new Array(n).fill(null),
     maneuvers: new Array(n).fill(null),
+    snapDist: new Array(waypoints.length).fill(0),
   };
 }
 
@@ -263,8 +264,12 @@ export async function fetchRoadRoute(
       }
     }
 
-    // OSRM's snapped waypoint locations (used as the search anchor per turn point).
-    const snapped = ((data.waypoints ?? []) as { location?: [number, number] }[]).map((w) => w.location);
+    // OSRM's snapped waypoint locations (used as the search anchor per turn point)
+    // and how far each input coordinate had to move to reach the road — a large
+    // value means the point snapped to a distant road (maybe the wrong bank).
+    const rawWaypoints = (data.waypoints ?? []) as { location?: [number, number]; distance?: number }[];
+    const snapped = rawWaypoints.map((w) => w.location);
+    const snapDist = waypoints.map((_, i) => Math.round(rawWaypoints[i]?.distance ?? 0));
 
     // One junction per turn point = waypoints 1..n-2 of the full [start,…,end]
     // list, plus the name of the road the route turns ONTO there (for the
@@ -348,7 +353,7 @@ export async function fetchRoadRoute(
       const rot = (b: number) => Math.round((((b - inB + 180) % 360) + 360) % 360);
       junctions.push({ roads: best.bearings.map(rot), take: rot(best.bearings[best.out]) });
     }
-    return { route, legs, legGeoms, junctions, streets, fromStreets, roundabouts, maneuvers };
+    return { route, legs, legGeoms, junctions, streets, fromStreets, roundabouts, maneuvers, snapDist };
   } catch {
     return null;
   } finally {
