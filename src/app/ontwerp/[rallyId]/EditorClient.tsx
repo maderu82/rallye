@@ -23,7 +23,7 @@ const RoadbookMap = dynamic(() => import("@/components/RoadbookMap"), {
 });
 import { BLOCKS, GRADING_LABEL, HINT_LABEL, NAV_MODES, NAV_BY_MODE, BLOCK_BY_TYPE, ROADBOOK_DIRS, PICTOS, DANGER_LABEL, ROUTE_PROFILES } from "@/lib/blocks";
 import type { RoadbookStep } from "@/lib/types";
-import { bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, nearestRoadDistance, roadbookDirsFromGeom, routebookPhrase, streetnamesPhrase, type RouteProfile } from "@/lib/geo";
+import { autoTurns, bearing, deriveRoadbook, dirFromTakeAngle, fetchRoadRoute, haversine, nearestRoadDistance, roadbookDirsFromGeom, routebookPhrase, streetnamesPhrase, type RouteProfile } from "@/lib/geo";
 import {
   addLeg,
   addPoint,
@@ -1188,6 +1188,36 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     }
   }
 
+  // Auto-fill: enumerate every turn on the direct route start→end from OSRM, so
+  // the organizer sees the whole roadbook without clicking each junction. This
+  // REPLACES the current points, so it's confirmed first.
+  async function autoFillTurns() {
+    if (!start || !end) return;
+    if (turnPoints.length > 0 && !confirm("Alle huidige punten vervangen door de automatisch gevonden afslagen op de route?")) return;
+    setRouting(true);
+    const res = await autoTurns([start, ...turnPoints, end], profile as RouteProfile);
+    setRouting(false);
+    if (!res) { setRouteFailed(true); return; }
+    const pts = res.turns.map((t) => ({ lat: t.lat, lng: t.lng }));
+    const newSteps: RoadbookStep[] = res.turns.map((t) => {
+      const note =
+        variant === "streets" ? streetnamesPhrase(t.dir, t.fromStreet, t.toStreet)
+        : variant === "routebook" ? routebookPhrase(t.dir, t.toStreet, t.exit)
+        : "";
+      return {
+        dist: t.dist,
+        dir: t.dir,
+        note,
+        ...(t.toStreet ? { street: t.toStreet } : {}),
+        ...(t.fromStreet ? { from_street: t.fromStreet } : {}),
+        ...(t.exit != null ? { exit: t.exit } : {}),
+        ...(t.take != null ? { take: t.take } : {}),
+      };
+    });
+    newSteps.push({ dist: res.finalDist, dir: "arrive", note: "" });
+    run(() => updateLeg(rallyId, leg.id, { turn_points: pts, turn_steps: newSteps, turn_route: res.route }));
+  }
+
   const addPointAt = (lat: number, lng: number) => void reroute([...turnPoints, { lat, lng }], [...curPerPoint(), {}]);
   const movePointAt = (i: number, lat: number, lng: number) =>
     void reroute(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)), curPerPoint());
@@ -1216,6 +1246,11 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
         {addMode ? "📍 Klikken staat aan — klik op de kaart" : "➕ Punten klikken"}
       </button>
       <button className="btn btn-ghost text-sm" onClick={() => void reroute(turnPoints, curPerPoint())}>🛣️ Route bijwerken</button>
+      {["streets", "routebook", "turn", "dakar"].includes(variant) && start && end ? (
+        <button className="btn btn-ghost text-sm" title="Loopt de route start→finish al goed? Laat de app alle afslagen automatisch invullen." onClick={() => void autoFillTurns()}>
+          ✨ Alle afslagen automatisch invullen
+        </button>
+      ) : null}
       {routing ? <span className="text-xs text-polder-grey">🛣️ route berekenen…</span> : null}
       {!routing && routeFailed ? <span className="text-xs text-coral">⚠️ routeserver even niet bereikbaar — rechte lijnen gebruikt. Klik &ldquo;Route bijwerken&rdquo; om opnieuw te proberen.</span> : null}
     </div>

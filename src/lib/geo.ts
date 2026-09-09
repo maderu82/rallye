@@ -356,6 +356,91 @@ export async function fetchRoadRoute(
   }
 }
 
+/** One auto-detected turn along a route: where, which way, and the two streets. */
+export interface AutoTurn {
+  lat: number;
+  lng: number;
+  dir: string;
+  fromStreet: string | null;
+  toStreet: string | null;
+  dist: number; // metres travelled since the previous turn (or the start)
+  exit?: number; // roundabout exit number
+  take?: number; // roundabout exit angle (screen degrees)
+}
+
+/**
+ * Enumerate EVERY turn along the route through `waypoints` (start … shaping
+ * points … end), straight from OSRM's own maneuvers — so the organizer doesn't
+ * have to click each junction to see the roadbook. Routing through the given
+ * points keeps the line they drew; only real turns (left/right/slight/sharp/
+ * uturn/roundabout) become entries, straight-on crossings are skipped. Returns
+ * the turns, the final leg's distance to the destination, and the geometry.
+ */
+export async function autoTurns(
+  waypoints: LL[],
+  profile: RouteProfile = "car",
+): Promise<{ turns: AutoTurn[]; finalDist: number; route: [number, number][] } | null> {
+  if (profile === "boat" || waypoints.length < 2) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(";");
+    const url = `${osrmHost(profile)}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const r = data.routes?.[0];
+    if (!r) return null;
+    const route = (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
+    type Mv = { type?: string; modifier?: string; exit?: number; location?: [number, number]; bearing_before?: number; bearing_after?: number };
+    type Step = { distance?: number; name?: string; maneuver?: Mv; exit?: number };
+    const legs = (r.legs ?? []) as { steps?: Step[] }[];
+    const turns: AutoTurn[] = [];
+    let accum = 0; // metres since the last emitted turn, carried across legs/vias
+    let finalDist = 0;
+    let prevName: string | null = null; // road we're currently on (spans vias)
+    for (let li = 0; li < legs.length; li++) {
+      const steps = legs[li].steps ?? [];
+      for (let k = 0; k < steps.length; k++) {
+        const s = steps[k];
+        const type = (s.maneuver?.type ?? "").toLowerCase();
+        accum += steps[k - 1]?.distance ?? 0; // distance driven to reach this maneuver
+        if (type === "depart") { if (s.name?.trim()) prevName = s.name.trim(); continue; }
+        if (type === "arrive") {
+          if (li === legs.length - 1) finalDist = Math.round(accum);
+          continue; // a via (or the end): not a turn — keep accumulating
+        }
+        const isRound = /roundabout|rotary/.test(type);
+        const dir = isRound ? "roundabout" : modifierToDir(s.maneuver?.modifier);
+        const toName = s.name?.trim() || null;
+        if (!dir) { if (toName) prevName = toName; continue; } // straight-on / name change
+        const loc = s.maneuver?.location;
+        if (!loc) continue;
+        const exit = isRound ? (typeof s.exit === "number" ? s.exit : typeof s.maneuver?.exit === "number" ? s.maneuver.exit : undefined) : undefined;
+        const bb = s.maneuver?.bearing_before, ba = s.maneuver?.bearing_after;
+        const take = isRound && typeof bb === "number" && typeof ba === "number" ? (((ba - bb) % 360) + 360) % 360 : undefined;
+        turns.push({
+          lat: loc[1],
+          lng: loc[0],
+          dir,
+          fromStreet: prevName,
+          toStreet: toName,
+          dist: Math.round(accum),
+          ...(exit != null ? { exit } : {}),
+          ...(take != null ? { take } : {}),
+        });
+        accum = 0;
+        if (toName) prevName = toName;
+      }
+    }
+    return { turns, finalDist, route };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Bearing of the last ~`meters` of a road-leg geometry (the approach heading). */
 function bearingIntoEnd(coords: [number, number][], meters = 22): number | null {
   if (coords.length < 2) return null;
