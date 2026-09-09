@@ -1279,6 +1279,17 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
     void reroute(turnPoints.map((t, j) => (j === i ? { lat, lng } : t)), curPerPoint());
   const deletePointAt = (i: number) =>
     void reroute(turnPoints.filter((_, j) => j !== i), curPerPoint().filter((_, j) => j !== i));
+  // Reorder a point in the sequence: swap it with its neighbour (its direction /
+  // note / photo move with it) and re-route so distances follow the new order.
+  const movePointOrder = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= turnPoints.length) return;
+    const pts = turnPoints.slice();
+    [pts[i], pts[j]] = [pts[j], pts[i]];
+    const per = curPerPoint();
+    [per[i], per[j]] = [per[j], per[i]];
+    void reroute(pts, per);
+  };
 
   // Setting a direction / note doesn't move anything, so just save the steps.
   const setStep = (i: number, patch: Partial<RoadbookStep>) =>
@@ -1446,7 +1457,11 @@ function RoadbookEditor({ rallyId, leg, fromPoint, toPoint, run, variant = "turn
                       m
                     </label>
                   ) : null}
-                  <button className="btn btn-danger ml-auto px-2 py-1 text-xs" onClick={() => deletePointAt(i)}>✕ punt</button>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button className="rounded border-2 border-polder-line px-1.5 py-1 text-xs disabled:opacity-30" title="Eerder in de volgorde" disabled={i === 0} onClick={() => movePointOrder(i, -1)}>▲</button>
+                    <button className="rounded border-2 border-polder-line px-1.5 py-1 text-xs disabled:opacity-30" title="Later in de volgorde" disabled={i === turnPoints.length - 1} onClick={() => movePointOrder(i, 1)}>▼</button>
+                    <button className="btn btn-danger px-2 py-1 text-xs" onClick={() => deletePointAt(i)}>✕ punt</button>
+                  </div>
                 </div>
                 {warn ? <p className="mb-1.5 text-[11px] font-semibold text-coral">{warn}</p> : null}
                 {photoBlock}
