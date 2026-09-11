@@ -49,8 +49,9 @@ export async function joinRally(formData: FormData) {
   // the part after it.
   const raw = String(formData.get("joinCode") ?? "").trim().toUpperCase().replace(/\s+/g, "");
   const joinCode = raw && !raw.startsWith("RLY-") ? `RLY-${raw.replace(/^RLY-?/, "")}` : raw;
-  const teamName = String(formData.get("teamName") ?? "").trim() || "Naamloos team";
+  const teamName = String(formData.get("teamName") ?? "").trim();
   if (!joinCode) return { error: "Vul een teamcode in." };
+  if (!teamName) return { error: "Vul een teamnaam in." };
 
   const db = createAdminClient();
   // Case-insensitive match as a safety net for any legacy codes stored in a

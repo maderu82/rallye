@@ -30,6 +30,7 @@ export default function JoinForm() {
             value={suffix}
             onChange={(e) => setSuffix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8))}
             inputMode="text"
+            required
             autoCapitalize="characters"
             autoComplete="off"
             spellCheck={false}
@@ -48,6 +49,7 @@ export default function JoinForm() {
           name="teamName"
           defaultValue=""
           maxLength={24}
+          required
           placeholder="Bijv. De Verdwaalde Vossen"
           className="input"
         />
