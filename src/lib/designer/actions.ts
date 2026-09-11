@@ -196,6 +196,29 @@ export async function deleteTeam(rallyId: string, teamId: string) {
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+/**
+ * Game leader: force-unlock a team's assignment(s) up to a point position,
+ * bypassing the gps gate. Rides the realtime team_scores row so the team's
+ * device opens the assignment live. Never lowers an already-unlocked index.
+ */
+export async function unlockTeamPoint(rallyId: string, teamId: string, position: number) {
+  await requireOwner(rallyId);
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("team_scores")
+    .select("unlocked_index")
+    .eq("team_id", teamId)
+    .eq("rally_id", rallyId)
+    .maybeSingle();
+  const next = Math.max(data?.unlocked_index ?? -1, Math.round(position));
+  await admin
+    .from("team_scores")
+    .update({ unlocked_index: next, updated_at: new Date().toISOString() })
+    .eq("team_id", teamId)
+    .eq("rally_id", rallyId);
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 /** Wipe all teams of a rally clean (fresh start). */
 export async function clearTeams(rallyId: string) {
   await requireOwner(rallyId);

@@ -189,9 +189,11 @@ create table if not exists public.team_scores (
   hints         int  not null default 0,
   current_index int  not null default 0,
   finished      boolean not null default false,
+  unlocked_index int not null default -1,
   updated_at    timestamptz not null default now()
 );
 create index if not exists team_scores_rally_idx on public.team_scores (rally_id);
+alter table public.team_scores add column if not exists unlocked_index int not null default -1;
 
 -- backfill any missing score rows (safe to re-run)
 insert into public.team_scores (team_id, rally_id, name, score, hints, current_index, finished)

@@ -340,6 +340,8 @@ export default function PlayClient({
   const [lbOpen, setLbOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [remoteBoard, setRemoteBoard] = useState<LeaderboardRow[]>(leaderboard);
+  // Highest point position the game leader has force-unlocked for us (-1 = none).
+  const [unlockedIndex, setUnlockedIndex] = useState<number>(-1);
   const [answeredEnroute, setAnsweredEnroute] = useState<Set<string>>(() => {
     const s = new Set<string>();
     for (const e of state.events) {
@@ -410,7 +412,7 @@ export default function PlayClient({
     async function refetch() {
       const { data } = await supabase
         .from("team_scores")
-        .select("team_id,name,score,hints,current_index,finished")
+        .select("team_id,name,score,hints,current_index,finished,unlocked_index")
         .eq("rally_id", rallyId);
       if (data) {
         setRemoteBoard(
@@ -424,6 +426,9 @@ export default function PlayClient({
             me: r.team_id === teamId,
           })),
         );
+        // Our own row carries game-leader directives (force-unlock a point).
+        const mine = data.find((r) => r.team_id === teamId) as { unlocked_index?: number } | undefined;
+        if (mine && typeof mine.unlocked_index === "number") setUnlockedIndex(mine.unlocked_index);
       }
     }
     const channel = supabase
@@ -574,6 +579,7 @@ export default function PlayClient({
             stepIndex={step}
             total={flowPoints.length}
             completed={completed}
+            unlockedIndex={unlockedIndex}
             testMode={testMode}
             onScored={onScored}
             toast={toast}
@@ -630,6 +636,7 @@ function WaypointView(props: {
   stepIndex: number;
   total: number;
   completed: Set<string>;
+  unlockedIndex: number;
   testMode: boolean;
   onScored: (score: number, badge?: { name: string; icon: string }) => void;
   toast: (m: string) => void;
@@ -641,11 +648,19 @@ function WaypointView(props: {
   answeredEnroute: Set<string>;
   onEnrouteAnswered: (legId: string) => void;
 }) {
-  const { point, leg, assignment, stepIndex, total, completed, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
+  const { point, leg, assignment, stepIndex, total, completed, unlockedIndex, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
   // A speed test must be started at the beginning of the leg, so it isn't
   // arrival-gated like the other assignments.
   const gated = point.gps_unlock && assignment?.type !== "speed_test";
   const [unlocked, setUnlocked] = useState(!gated);
+  // The game leader can force-unlock this point remotely (bypassing the gps
+  // gate) — it arrives live via the team's realtime row.
+  useEffect(() => {
+    if (gated && !unlocked && unlockedIndex >= point.position) {
+      setUnlocked(true);
+      toast("🔓 De spelleider heeft deze opdracht ontgrendeld.");
+    }
+  }, [gated, unlocked, unlockedIndex, point.position, toast]);
   const done = assignment ? completed.has(assignment.id) : true;
   // Puzzle navigation modes hide the destination: the point name + note would
   // otherwise reveal where to go, so keep them hidden until the team arrives.
