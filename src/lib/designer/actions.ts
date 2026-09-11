@@ -223,6 +223,62 @@ export async function unlockTeamPoint(rallyId: string, teamId: string): Promise<
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+/**
+ * Game leader: push a team forward to the assignment at `targetPosition`. Every
+ * skipped assignment before it that the team hasn't done is booked as complete
+ * for 0 points (choice A), so a device reload keeps the team advanced; the
+ * team's position is set to the target and the unlock counter bumped so the
+ * target opens. The team's device jumps there live via its realtime row.
+ */
+export async function pushTeamToPoint(rallyId: string, teamId: string, targetPosition: number): Promise<{ error?: string } | void> {
+  await requireOwner(rallyId);
+  const admin = createAdminClient();
+  const target = Math.round(targetPosition);
+
+  const { data: team } = await admin.from("teams").select("id,current_index").eq("id", teamId).eq("rally_id", rallyId).maybeSingle();
+  if (!team) return { error: "Team niet gevonden." };
+
+  // Assignments strictly before the target that the team hasn't completed yet →
+  // book them as skipped (complete, 0 points) so a reload doesn't send them back.
+  const [{ data: pts }, { data: asgs }, { data: done }] = await Promise.all([
+    admin.from("points").select("id,position").eq("rally_id", rallyId).lt("position", target),
+    admin.from("assignments").select("id,point_id").eq("rally_id", rallyId),
+    admin.from("team_events").select("assignment_id,detail").eq("team_id", teamId),
+  ]);
+  const asgByPoint = new Map((asgs ?? []).map((a) => [a.point_id, a.id as string]));
+  const completed = new Set(
+    (done ?? [])
+      .filter((e) => e.assignment_id && (e.detail as { complete?: boolean } | null)?.complete)
+      .map((e) => e.assignment_id as string),
+  );
+  const rows = (pts ?? [])
+    .map((p) => ({ pointId: p.id as string, asgId: asgByPoint.get(p.id) }))
+    .filter((x): x is { pointId: string; asgId: string } => !!x.asgId && !completed.has(x.asgId))
+    .map((x) => ({
+      team_id: teamId,
+      rally_id: rallyId,
+      assignment_id: x.asgId,
+      point_id: x.pointId,
+      kind: "manual" as const,
+      points_delta: 0,
+      detail: { complete: true, skipped: true, pushed: true },
+    }));
+  if (rows.length) await admin.from("team_events").insert(rows);
+
+  if (target > (team.current_index ?? 0)) {
+    await admin.from("teams").update({ current_index: target }).eq("id", teamId);
+  }
+  // Bump the unlock counter so the target opens even if it's gps-gated.
+  const { data: ts } = await admin.from("team_scores").select("unlocked_index").eq("team_id", teamId).maybeSingle();
+  if (ts) {
+    await admin
+      .from("team_scores")
+      .update({ unlocked_index: (ts.unlocked_index ?? -1) + 1, updated_at: new Date().toISOString() })
+      .eq("team_id", teamId);
+  }
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 /** Wipe all teams of a rally clean (fresh start). */
 export async function clearTeams(rallyId: string) {
   await requireOwner(rallyId);

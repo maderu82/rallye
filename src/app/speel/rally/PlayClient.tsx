@@ -342,6 +342,9 @@ export default function PlayClient({
   const [remoteBoard, setRemoteBoard] = useState<LeaderboardRow[]>(leaderboard);
   // Highest point position the game leader has force-unlocked for us (-1 = none).
   const [unlockedIndex, setUnlockedIndex] = useState<number>(-1);
+  // Our server-side position; a game-leader "push" bumps it ahead of the screen.
+  const [serverIndex, setServerIndex] = useState<number>(state.team.current_index);
+  const [pushedStep, setPushedStep] = useState<number>(-1); // step reached via a push (start unlocked)
   const [answeredEnroute, setAnsweredEnroute] = useState<Set<string>>(() => {
     const s = new Set<string>();
     for (const e of state.events) {
@@ -426,6 +429,8 @@ export default function PlayClient({
             me: r.team_id === teamId,
           })),
         );
+        const mine = data.find((r) => r.team_id === teamId);
+        if (mine && typeof mine.current_index === "number") setServerIndex(mine.current_index);
       }
       // Our own row carries the game-leader unlock counter. Fetched separately so
       // a missing column (migration not yet run) never breaks the leaderboard.
@@ -450,6 +455,27 @@ export default function PlayClient({
       void supabase.removeChannel(channel);
     };
   }, [rallyId, teamId]);
+
+  // Game-leader push: our server position jumped ahead of where we are on screen
+  // → advance there, mark the skipped assignments done (booked 0-pt server-side),
+  // and start the target unlocked.
+  useEffect(() => {
+    const targetStep = flowPoints.findIndex((p) => p.position === serverIndex);
+    if (targetStep > step) {
+      setCompleted((s) => {
+        const n = new Set(s);
+        for (let i = step; i < targetStep; i++) {
+          const a = assignmentByPoint.get(flowPoints[i].id);
+          if (a) n.add(a.id);
+        }
+        return n;
+      });
+      setPushedStep(targetStep);
+      setStep(targetStep);
+      toast("⏭️ De spelleider heeft jullie doorgezet naar een volgende opdracht.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverIndex]);
 
   function toast(msg: string) {
     const id = Date.now() + Math.random();
@@ -591,6 +617,7 @@ export default function PlayClient({
             total={flowPoints.length}
             completed={completed}
             unlockedIndex={unlockedIndex}
+            forceUnlocked={step === pushedStep}
             testMode={testMode}
             onScored={onScored}
             toast={toast}
@@ -648,6 +675,7 @@ function WaypointView(props: {
   total: number;
   completed: Set<string>;
   unlockedIndex: number;
+  forceUnlocked: boolean;
   testMode: boolean;
   onScored: (score: number, badge?: { name: string; icon: string }) => void;
   toast: (m: string) => void;
@@ -659,11 +687,11 @@ function WaypointView(props: {
   answeredEnroute: Set<string>;
   onEnrouteAnswered: (legId: string) => void;
 }) {
-  const { point, leg, assignment, stepIndex, total, completed, unlockedIndex, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
+  const { point, leg, assignment, stepIndex, total, completed, unlockedIndex, forceUnlocked, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
   // A speed test must be started at the beginning of the leg, so it isn't
   // arrival-gated like the other assignments.
   const gated = point.gps_unlock && assignment?.type !== "speed_test";
-  const [unlocked, setUnlocked] = useState(!gated);
+  const [unlocked, setUnlocked] = useState(!gated || forceUnlocked);
   // The game leader can force-unlock this point remotely (bypassing the gps
   // gate). It rides the team's realtime row as a counter; any increase since we
   // opened this point means "open the assignment they're stuck on". The baseline

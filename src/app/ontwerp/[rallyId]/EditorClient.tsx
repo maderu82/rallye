@@ -35,6 +35,7 @@ import {
   importGpx,
   movePointTo,
   renameRally,
+  pushTeamToPoint,
   reorderPoint,
   reviewSubmission,
   unlockTeamPoint,
@@ -573,11 +574,46 @@ export default function EditorClient({
           onClearTeams={() => run(() => clearTeams(rally.id))}
           onCorrect={(eventId, finalPoints) => run(() => reviewSubmission(rally.id, eventId, finalPoints))}
           onUnlock={(teamId) => run(() => unlockTeamPoint(rally.id, teamId))}
+          onPush={(teamId, position) => run(() => pushTeamToPoint(rally.id, teamId, position))}
           labelOf={labelOf}
           onRefresh={() => router.refresh()}
         />
       )}
     </main>
+  );
+}
+
+// Game-leader control: push a team forward to a chosen assignment. Skipped
+// assignments in between are booked as done for 0 points (choice A).
+function PushTeamRow({ team, points, labelOf, onPush }: { team: LiveTeam; points: Point[]; labelOf: (p: Point) => string; onPush: (teamId: string, position: number) => void }) {
+  const ahead = points
+    .filter((p) => (p.kind === "waypoint" || p.kind === "finish") && p.position > team.current_index)
+    .sort((a, b) => a.position - b.position);
+  const [pos, setPos] = useState<string>("");
+  if (ahead.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-soft bg-paper p-1.5">
+      <span className="text-[11px] font-semibold text-polder-grey">⏭️ Zet door naar:</span>
+      <select value={pos} onChange={(e) => setPos(e.target.value)} className="rounded border border-polder-line px-1.5 py-0.5 text-[12px]">
+        <option value="">kies opdracht…</option>
+        {ahead.map((p) => (
+          <option key={p.id} value={p.position}>{labelOf(p)} — {p.name}</option>
+        ))}
+      </select>
+      <button
+        className="rounded bg-teal px-2 py-0.5 text-[11px] font-bold text-white disabled:opacity-40"
+        disabled={pos === ""}
+        onClick={() => {
+          const p = ahead.find((x) => String(x.position) === pos);
+          if (p && confirm(`Team "${team.name}" doorzetten naar "${p.name}"? De overgeslagen opdrachten tellen als gedaan (0 punten).`)) {
+            onPush(team.id, p.position);
+            setPos("");
+          }
+        }}
+      >
+        Zet door
+      </button>
+    </div>
   );
 }
 
@@ -1766,6 +1802,7 @@ function LiveView({
   onClearTeams,
   onCorrect,
   onUnlock,
+  onPush,
   labelOf,
   onRefresh,
 }: {
@@ -1784,6 +1821,7 @@ function LiveView({
   onClearTeams: () => void;
   onCorrect: (eventId: string, finalPoints: number) => void;
   onUnlock: (teamId: string) => void;
+  onPush: (teamId: string, position: number) => void;
   labelOf: (p: Point) => string;
   onRefresh: () => void;
 }) {
@@ -2110,13 +2148,16 @@ function LiveView({
                         ))
                       )}
                       {!t.finished ? (
-                        <button
-                          className="btn btn-ghost w-full text-xs"
-                          title="Open de opdracht waar dit team nu op zit, ook zonder gps (bij een vastgelopen team)."
-                          onClick={() => onUnlock(t.id)}
-                        >
-                          🔓 Ontgrendel de huidige opdracht voor dit team
-                        </button>
+                        <>
+                          <button
+                            className="btn btn-ghost w-full text-xs"
+                            title="Open de opdracht waar dit team nu op zit, ook zonder gps (bij een vastgelopen team)."
+                            onClick={() => onUnlock(t.id)}
+                          >
+                            🔓 Ontgrendel de huidige opdracht voor dit team
+                          </button>
+                          <PushTeamRow team={t} points={points} labelOf={labelOf} onPush={onPush} />
+                        </>
                       ) : null}
                       <Link href={`/ontwerp/${rallyId}/review`} className="btn btn-ghost w-full text-xs">🔎 Naar nakijken/corrigeren</Link>
                       <button
