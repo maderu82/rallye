@@ -14,7 +14,7 @@ export default function JoinForm() {
   // Only the part AFTER the fixed "RLY-" prefix is typed, so players can't
   // mistype the prefix. The server re-applies "RLY-" (and tolerates a pasted
   // full code), so we submit just the suffix.
-  const [suffix, setSuffix] = useState("7H2K");
+  const [suffix, setSuffix] = useState("");
 
   return (
     <form action={formAction} className="space-y-3">
@@ -46,8 +46,9 @@ export default function JoinForm() {
         <input
           id="teamName"
           name="teamName"
-          defaultValue="De Verdwaalde Vossen"
+          defaultValue=""
           maxLength={24}
+          placeholder="Bijv. De Verdwaalde Vossen"
           className="input"
         />
       </div>
