@@ -451,7 +451,7 @@ export async function buyDigit(assignmentId: string): Promise<ActionResult & { r
     .split("")
     .map((c, i) => (i <= already ? c : "•"))
     .join(" ");
-  return { ok: true, complete: false, feedback: `🔢 Cijfer ${already + 1} gekocht.`, score: await scoreOf(db, team.id), revealed };
+  return { ok: true, complete: false, feedback: `🔢 Teken ${already + 1} gekocht.`, score: await scoreOf(db, team.id), revealed };
 }
 
 // ── report the team's live GPS position (for the organizer's live view) ──────

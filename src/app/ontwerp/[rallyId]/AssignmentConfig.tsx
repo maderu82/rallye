@@ -111,12 +111,12 @@ export default function AssignmentConfig({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="field-label">Kosten per cijfer kopen</label>
+              <label className="field-label">Kosten per teken kopen</label>
               <input type="number" min={0} defaultValue={num(sol.digitCost, 10)} className="input" onBlur={(e) => { const v = num(e.target.value, 10); saveSolution({ digitCost: v }); savePublic({ digitCost: v }); }} />
             </div>
             <div>{wrongPenaltyField}</div>
           </div>
-          <p className="text-xs text-polder-grey">Bij een numerieke code kunnen teams (na de hint) cijfers kopen. Bij tekst/rebus werkt alleen de hint.</p>
+          <p className="text-xs text-polder-grey">Na de hint kunnen teams de code teken voor teken kopen — werkt met cijfers én letters (bijv. ROOS). Hoofdletters, spaties en streepjes maken niet uit bij het controleren.</p>
         </div>
       );
 

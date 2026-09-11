@@ -2368,12 +2368,12 @@ function CodeBreakerHelp({
         </button>
       ) : (
         <button className="btn btn-ghost w-full" onClick={buy} disabled={busy}>
-          🔢 Koop een cijfer (−{Number((assignment.public_config as { digitCost?: number }).digitCost ?? 10)} ptn)
+          🔢 Koop een teken (−{Number((assignment.public_config as { digitCost?: number }).digitCost ?? 10)} ptn)
         </button>
       )}
       {hintUsed ? (
         <p className="mt-1.5 text-xs text-polder-grey">
-          Kom je er na de hint nog niet uit? Koop cijfers van de code, één voor één, van links naar rechts.
+          Kom je er na de hint nog niet uit? Koop tekens van de code (letters of cijfers), één voor één, van links naar rechts.
         </p>
       ) : null}
     </div>

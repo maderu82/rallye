@@ -35,7 +35,7 @@ export const BLOCKS: BlockDef[] = [
   { type: "multiple_choice", label: "Meerkeuzevraag", grading: "auto", icon: "❓", blurb: "Kies het juiste antwoord uit meerdere opties." },
   { type: "open_question", label: "Open vraag (tekst/getal)", grading: "auto", icon: "✍️", blurb: "Typ het antwoord in; de app controleert het." },
   { type: "observation", label: "Observatievraag onderweg", grading: "auto", icon: "👀", blurb: "Beantwoord een vraag over iets dat je onderweg ziet." },
-  { type: "code_breaker", label: "Codekraker / cijferpuzzel / rebus", grading: "auto", icon: "🔐", blurb: "Kraak een code; hint eerst, daarna cijfers koopbaar." },
+  { type: "code_breaker", label: "Codekraker / cijfer- of lettercode / rebus", grading: "auto", icon: "🔐", blurb: "Kraak een code (cijfers of letters); hint eerst, daarna tekens koopbaar." },
   { type: "estimation", label: "Schatting met marge", grading: "scale", icon: "📏", blurb: "Schat een waarde; punten naar nauwkeurigheid." },
   { type: "ordering", label: "Volgorde / sorteren", grading: "auto", icon: "🔢", blurb: "Zet items in de juiste volgorde." },
   { type: "photo_search", label: "Fotozoekopdracht", grading: "auto", icon: "📸", blurb: "Vind iets en fotografeer het als bewijs." },
