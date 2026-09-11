@@ -1979,13 +1979,45 @@ function LiveView({
               <span className="text-sm font-bold text-teal-dark">Live kaart — hele rally</span>
               <button className="btn btn-primary ml-auto text-sm" onClick={() => setExpandedLive(false)}>✓ Klaar</button>
             </div>
-            <div className="min-h-0 flex-1 overflow-hidden rounded-xl">
-              <RallyMap
-                points={liveMapPoints}
-                teams={liveMapTeams}
-                trails={liveMapTrails}
-                height={typeof window !== "undefined" ? window.innerHeight - 90 : 600}
-              />
+            <div className="flex min-h-0 flex-1 gap-3">
+              <div className="min-h-0 flex-1 overflow-hidden rounded-xl">
+                <RallyMap
+                  points={liveMapPoints}
+                  teams={liveMapTeams}
+                  trails={liveMapTrails}
+                  height={typeof window !== "undefined" ? window.innerHeight - 90 : 600}
+                />
+              </div>
+              <aside className="flex w-[280px] shrink-0 flex-col overflow-hidden rounded-xl bg-white">
+                <div className="border-b border-polder-line px-3 py-2 text-xs font-bold uppercase tracking-wide text-polder-grey">🏆 Scores</div>
+                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
+                  {teams.length === 0 ? (
+                    <p className="p-2 text-xs text-polder-grey">Nog geen teams.</p>
+                  ) : (
+                    [...teams].sort((a, b) => b.score - a.score).map((t, rank) => {
+                      const ci = teams.findIndex((x) => x.id === t.id);
+                      const st = statById.get(t.id);
+                      return (
+                        <div key={t.id} className={`flex items-center gap-2 rounded-soft border-l-4 bg-paper px-2 py-1.5 ${st?.offCourse ? "border-[#D85A30]" : t.finished ? "border-coral" : "border-teal"}`}>
+                          <span className="w-4 shrink-0 text-center text-[11px] font-bold text-polder-grey">{rank + 1}</span>
+                          <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: TEAM_COLORS[ci % TEAM_COLORS.length] }} />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[13px] font-bold text-ink">{t.name}</div>
+                            <div className="truncate text-[10px] text-polder-grey">
+                              {t.finished ? "🏁 gefinisht" : `punt ${t.current_index}`}
+                              {st?.leader ? " · 🏃 kop" : ""}
+                              {st?.laggard ? " · 🐢 achter" : ""}
+                              {st?.offCourse ? " · 🧭 uit koers" : ""}
+                              {st?.idle ? ` · 🛑 ${st.idleMin}m` : ""}
+                            </div>
+                          </div>
+                          <span className="shrink-0 text-sm font-bold text-teal-dark">{t.score}</span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </aside>
             </div>
           </div>
         ) : null}
