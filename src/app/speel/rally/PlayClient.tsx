@@ -412,7 +412,7 @@ export default function PlayClient({
     async function refetch() {
       const { data } = await supabase
         .from("team_scores")
-        .select("team_id,name,score,hints,current_index,finished,unlocked_index")
+        .select("team_id,name,score,hints,current_index,finished")
         .eq("rally_id", rallyId);
       if (data) {
         setRemoteBoard(
@@ -426,9 +426,20 @@ export default function PlayClient({
             me: r.team_id === teamId,
           })),
         );
-        // Our own row carries game-leader directives (force-unlock a point).
-        const mine = data.find((r) => r.team_id === teamId) as { unlocked_index?: number } | undefined;
-        if (mine && typeof mine.unlocked_index === "number") setUnlockedIndex(mine.unlocked_index);
+      }
+      // Our own row carries the game-leader unlock counter. Fetched separately so
+      // a missing column (migration not yet run) never breaks the leaderboard.
+      try {
+        const { data: mine } = await supabase
+          .from("team_scores")
+          .select("unlocked_index")
+          .eq("team_id", teamId)
+          .maybeSingle();
+        if (mine && typeof (mine as { unlocked_index?: number }).unlocked_index === "number") {
+          setUnlockedIndex((mine as { unlocked_index: number }).unlocked_index);
+        }
+      } catch {
+        /* column not present yet — unlock feature simply inactive */
       }
     }
     const channel = supabase
@@ -654,13 +665,16 @@ function WaypointView(props: {
   const gated = point.gps_unlock && assignment?.type !== "speed_test";
   const [unlocked, setUnlocked] = useState(!gated);
   // The game leader can force-unlock this point remotely (bypassing the gps
-  // gate) — it arrives live via the team's realtime row.
+  // gate). It rides the team's realtime row as a counter; any increase since we
+  // opened this point means "open the assignment they're stuck on". The baseline
+  // resets per point because WaypointView is keyed by point id.
+  const unlockBaseline = useRef(unlockedIndex);
   useEffect(() => {
-    if (gated && !unlocked && unlockedIndex >= point.position) {
+    if (gated && !unlocked && unlockedIndex > unlockBaseline.current) {
       setUnlocked(true);
       toast("🔓 De spelleider heeft deze opdracht ontgrendeld.");
     }
-  }, [gated, unlocked, unlockedIndex, point.position, toast]);
+  }, [gated, unlocked, unlockedIndex, toast]);
   const done = assignment ? completed.has(assignment.id) : true;
   // Puzzle navigation modes hide the destination: the point name + note would
   // otherwise reveal where to go, so keep them hidden until the team arrives.

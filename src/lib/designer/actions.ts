@@ -197,25 +197,29 @@ export async function deleteTeam(rallyId: string, teamId: string) {
 }
 
 /**
- * Game leader: force-unlock a team's assignment(s) up to a point position,
- * bypassing the gps gate. Rides the realtime team_scores row so the team's
- * device opens the assignment live. Never lowers an already-unlocked index.
+ * Game leader: force-unlock the assignment a team is currently stuck on,
+ * bypassing the gps gate. Implemented as a monotonic bump of unlocked_index on
+ * the realtime team_scores row — the team's device opens the point it is viewing
+ * whenever this counter increases, so no fragile position matching is needed.
+ * Returns an error string on failure (e.g. the column/migration is missing).
  */
-export async function unlockTeamPoint(rallyId: string, teamId: string, position: number) {
+export async function unlockTeamPoint(rallyId: string, teamId: string): Promise<{ error?: string } | void> {
   await requireOwner(rallyId);
   const admin = createAdminClient();
-  const { data } = await admin
+  const { data, error: readErr } = await admin
     .from("team_scores")
     .select("unlocked_index")
     .eq("team_id", teamId)
     .eq("rally_id", rallyId)
     .maybeSingle();
-  const next = Math.max(data?.unlocked_index ?? -1, Math.round(position));
-  await admin
+  if (readErr) return { error: `Kan niet ontgrendelen (${readErr.message}). Is migratie 0026 gedraaid?` };
+  const next = (data?.unlocked_index ?? -1) + 1;
+  const { error } = await admin
     .from("team_scores")
     .update({ unlocked_index: next, updated_at: new Date().toISOString() })
     .eq("team_id", teamId)
     .eq("rally_id", rallyId);
+  if (error) return { error: `Kan niet ontgrendelen (${error.message}). Is migratie 0026 gedraaid?` };
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 

@@ -572,7 +572,7 @@ export default function EditorClient({
           onDeleteTeam={(id) => run(() => deleteTeam(rally.id, id))}
           onClearTeams={() => run(() => clearTeams(rally.id))}
           onCorrect={(eventId, finalPoints) => run(() => reviewSubmission(rally.id, eventId, finalPoints))}
-          onUnlock={(teamId, position) => run(() => unlockTeamPoint(rally.id, teamId, position))}
+          onUnlock={(teamId) => run(() => unlockTeamPoint(rally.id, teamId))}
           labelOf={labelOf}
           onRefresh={() => router.refresh()}
         />
@@ -1783,7 +1783,7 @@ function LiveView({
   onDeleteTeam: (teamId: string) => void;
   onClearTeams: () => void;
   onCorrect: (eventId: string, finalPoints: number) => void;
-  onUnlock: (teamId: string, position: number) => void;
+  onUnlock: (teamId: string) => void;
   labelOf: (p: Point) => string;
   onRefresh: () => void;
 }) {
@@ -2112,10 +2112,10 @@ function LiveView({
                       {!t.finished ? (
                         <button
                           className="btn btn-ghost w-full text-xs"
-                          title="Open de opdracht waar dit team naartoe gaat, ook zonder gps (bij een vastgelopen team)."
-                          onClick={() => onUnlock(t.id, t.current_index + 1)}
+                          title="Open de opdracht waar dit team nu op zit, ook zonder gps (bij een vastgelopen team)."
+                          onClick={() => onUnlock(t.id)}
                         >
-                          🔓 Ontgrendel de volgende opdracht voor dit team
+                          🔓 Ontgrendel de huidige opdracht voor dit team
                         </button>
                       ) : null}
                       <Link href={`/ontwerp/${rallyId}/review`} className="btn btn-ghost w-full text-xs">🔎 Naar nakijken/corrigeren</Link>
