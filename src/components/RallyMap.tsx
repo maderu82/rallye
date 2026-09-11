@@ -36,6 +36,7 @@ export interface RallyMapProps {
   addMode?: boolean;
   teams?: MapTeam[];
   trails?: MapTrail[];
+  routes?: [number, number][][]; // drawn navigation routes per leg (real geometry)
   height?: number;
   onAddPoint?: (lat: number, lng: number) => void;
   onSelectPoint?: (id: string) => void;
@@ -71,6 +72,7 @@ export default function RallyMap({
   addMode = false,
   teams = [],
   trails = [],
+  routes = [],
   height = 420,
   onAddPoint,
   onSelectPoint,
@@ -147,8 +149,14 @@ export default function RallyMap({
       .filter((p) => p.lat != null && p.lng != null)
       .map((p) => [p.lat as number, p.lng as number] as [number, number]);
 
-    // route line
-    if (coords.length >= 2) {
+    // route lines: the real drawn navigation routes when given (game-master
+    // tracking), else a straight dashed connector between points as an overview.
+    const drawnRoutes = routes.filter((r) => r.length >= 2);
+    if (drawnRoutes.length) {
+      for (const r of drawnRoutes) {
+        L.polyline(r, { color: "#534AB7", weight: 3.5, opacity: 0.6 }).addTo(layer);
+      }
+    } else if (coords.length >= 2) {
       L.polyline(coords, { color: "#1D9E75", weight: 4, dashArray: "9 7", opacity: 0.9 }).addTo(layer);
     }
 
@@ -186,7 +194,7 @@ export default function RallyMap({
       map.fitBounds(bounds.pad(0.3), { maxZoom: 15 });
       fittedRef.current = true;
     }
-  }, [points, teams, trails, selectedId, editable, onSelectPoint, onMovePoint]);
+  }, [points, teams, trails, routes, selectedId, editable, onSelectPoint, onMovePoint]);
 
   return <div ref={containerRef} style={{ height, width: "100%", borderRadius: 12, zIndex: 0 }} />;
 }

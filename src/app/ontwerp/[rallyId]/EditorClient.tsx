@@ -561,6 +561,7 @@ export default function EditorClient({
         <LiveView
           rallyId={rally.id}
           points={points}
+          legs={legs}
           teams={liveTeams}
           activity={teamActivity}
           speeds={teamSpeeds}
@@ -1789,6 +1790,7 @@ const TEAM_COLORS = [
 function LiveView({
   rallyId,
   points,
+  legs,
   teams,
   activity,
   speeds,
@@ -1808,6 +1810,7 @@ function LiveView({
 }: {
   rallyId: string;
   points: Point[];
+  legs: Leg[];
   teams: LiveTeam[];
   activity: Record<string, ActivityItem[]>;
   speeds: Record<string, LegSpeed[]>;
@@ -1831,6 +1834,11 @@ function LiveView({
 
   // Shared map data so the inline and full-screen live maps stay identical.
   const liveMapPoints = points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, label: labelOf(p), kind: p.kind }));
+  // The real drawn navigation routes, so the game master sees where teams should
+  // go (falls back to the straight point-connector when no routes are drawn yet).
+  const liveMapRoutes = legs
+    .map((l) => (Array.isArray(l.turn_route) ? (l.turn_route as [number, number][]) : []))
+    .filter((r) => r.length >= 2);
   const liveMapTeams = teams
     .map((t, i): MapTeam | null => {
       const real = t.last_lat != null && t.last_lng != null ? ([t.last_lat, t.last_lng] as [number, number]) : null;
@@ -1969,7 +1977,7 @@ function LiveView({
           <h3 className="text-sm font-bold uppercase tracking-wide text-teal-dark">Live kaart — posities van de teams</h3>
           <button className="btn btn-ghost ml-auto text-sm" onClick={() => setExpandedLive(true)}>⛶ Groot bekijken</button>
         </div>
-        <RallyMap points={liveMapPoints} teams={liveMapTeams} trails={liveMapTrails} />
+        <RallyMap points={liveMapPoints} teams={liveMapTeams} trails={liveMapTrails} routes={liveMapRoutes} />
         <p className="mt-2 text-xs text-polder-grey">
           {openTeam ? "Je ziet nu het spoor van het geopende team. Klik het team dicht voor alle sporen." : "Tip: klik hieronder een team open om alleen hún gereden spoor op de kaart te zien."}
         </p>
@@ -1985,6 +1993,7 @@ function LiveView({
                   points={liveMapPoints}
                   teams={liveMapTeams}
                   trails={liveMapTrails}
+                  routes={liveMapRoutes}
                   height={typeof window !== "undefined" ? window.innerHeight - 90 : 600}
                 />
               </div>
