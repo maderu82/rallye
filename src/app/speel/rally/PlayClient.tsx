@@ -10,6 +10,7 @@ import { NEXT_STEP_COST } from "@/lib/play/constants";
 import TulipGlyph from "@/components/TulipGlyph";
 import RoadArrowGlyph from "@/components/RoadArrowGlyph";
 import Picto from "@/components/Picto";
+import { nearestOnPath, pointAheadOnPath } from "@/lib/geo";
 import { createClient } from "@/lib/supabase/client";
 import QRScanner from "@/components/QRScanner";
 
@@ -345,6 +346,7 @@ export default function PlayClient({
   // Our server-side position; a game-leader "push" bumps it ahead of the screen.
   const [serverIndex, setServerIndex] = useState<number>(state.team.current_index);
   const [pushedStep, setPushedStep] = useState<number>(-1); // step reached via a push (start unlocked)
+  const [myPos, setMyPos] = useState<{ lat: number; lng: number; acc: number } | null>(null);
   const [answeredEnroute, setAnsweredEnroute] = useState<Set<string>>(() => {
     const s = new Set<string>();
     for (const e of state.events) {
@@ -397,6 +399,7 @@ export default function PlayClient({
     const id = navigator.geolocation.watchPosition(
       (p) => {
         setGpsAcc(Math.round(p.coords.accuracy || 0));
+        setMyPos({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0 });
         const now = Date.now();
         if (now - last < 15000) return; // at most every 15s
         last = now;
@@ -618,6 +621,7 @@ export default function PlayClient({
             completed={completed}
             unlockedIndex={unlockedIndex}
             forceUnlocked={step === pushedStep}
+            myPos={myPos}
             testMode={testMode}
             onScored={onScored}
             toast={toast}
@@ -676,6 +680,7 @@ function WaypointView(props: {
   completed: Set<string>;
   unlockedIndex: number;
   forceUnlocked: boolean;
+  myPos: { lat: number; lng: number; acc: number } | null;
   testMode: boolean;
   onScored: (score: number, badge?: { name: string; icon: string }) => void;
   toast: (m: string) => void;
@@ -687,7 +692,7 @@ function WaypointView(props: {
   answeredEnroute: Set<string>;
   onEnrouteAnswered: (legId: string) => void;
 }) {
-  const { point, leg, assignment, stepIndex, total, completed, unlockedIndex, forceUnlocked, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
+  const { point, leg, assignment, stepIndex, total, completed, unlockedIndex, forceUnlocked, myPos, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
   // A speed test must be started at the beginning of the leg, so it isn't
   // arrival-gated like the other assignments.
   const gated = point.gps_unlock && assignment?.type !== "speed_test";
@@ -715,6 +720,10 @@ function WaypointView(props: {
           <span key={i} className={i < stepIndex ? "done" : i === stepIndex ? "cur" : ""} />
         ))}
       </div>
+
+      {leg && ["turn", "routebook", "streets", "cryptic", "photo_nav", "dakar"].includes(leg.nav_mode) && Array.isArray(leg.turn_route) && leg.turn_route.length >= 2 ? (
+        <RouteRescue route={leg.turn_route as [number, number][]} myPos={myPos} testMode={testMode} />
+      ) : null}
 
       {leg ? (
         <LegNav
@@ -1056,6 +1065,7 @@ function RouteScore({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
     coverage: number;
+    precision: number;
     awarded: number;
     maxPoints: number;
     route: [number, number][];
@@ -1096,7 +1106,7 @@ function RouteScore({
       toast(r.error ?? "Kon de route niet scoren.");
       return;
     }
-    setResult({ coverage: r.coverage, awarded: r.awarded, maxPoints: r.maxPoints, route: r.route, trail: r.trail });
+    setResult({ coverage: r.coverage, precision: r.precision, awarded: r.awarded, maxPoints: r.maxPoints, route: r.route, trail: r.trail });
     onScored(r.score);
     if (!r.already) toast(`Route gevolgd: ${Math.round(r.coverage * 100)}% → +${r.awarded} punten`);
   }
@@ -1121,6 +1131,11 @@ function RouteScore({
               gevolgd van de uitgezette lijn → <b>+{result.awarded}</b>
               {result.maxPoints ? ` van ${result.maxPoints}` : ""} punten
             </p>
+            {result.precision < 0.98 ? (
+              <p className="mt-0.5 text-[12px] text-coral">
+                🧭 {Math.round(result.precision * 100)}% van jullie gereden route zat op de lijn — omrijden kost punten.
+              </p>
+            ) : null}
           </div>
           {result.route.length >= 2 || result.trail.length >= 2 ? (
             <>
@@ -1399,7 +1414,35 @@ function screenAngle(): number {
   return typeof legacy === "number" ? legacy : 0;
 }
 
-function LiveCompass({ target, testMode }: { target: Point; testMode: boolean }) {
+// Off-route rescue: when a team on a blind roadbook leg drifts far from the
+// drawn route, a compass appears pointing to a spot a little way FORWARD along
+// the route line — so it brings them back to the line AND facing the right way.
+// Hysteresis: shows past OFF metres, hides again under BACK metres.
+function RouteRescue({ route, myPos, testMode }: { route: [number, number][]; myPos: { lat: number; lng: number; acc: number } | null; testMode: boolean }) {
+  const OFF = 500, BACK = 50, LOOKAHEAD = 60;
+  const [active, setActive] = useState(false);
+  const path = useMemo(() => route.map(([lat, lng]) => ({ lat, lng })), [route]);
+  const near = myPos && path.length >= 2 ? nearestOnPath(path, { lat: myPos.lat, lng: myPos.lng }) : null;
+  const dist = near?.dist ?? null;
+  useEffect(() => {
+    if (dist == null) return;
+    if (!active && dist > OFF) setActive(true);
+    else if (active && dist < BACK) setActive(false);
+  }, [dist, active]);
+  if (!active || !near) return null;
+  const target = pointAheadOnPath(path, near.seg, near.t, LOOKAHEAD);
+  return (
+    <div className="card mb-3 border-l-4 border-[#D85A30] bg-coral-light">
+      <h3 className="mb-1 text-base font-bold text-coral">
+        🧭 Je bent van de route — {dist != null && dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist ?? 0)} m`} ernaast
+      </h3>
+      <p className="mb-1 text-[13px] text-[#8a3b1e]">Volg de pijl terug naar de route. Hij wijst al de goede kant op om verder te gaan.</p>
+      <LiveCompass target={target} testMode={testMode} label="terug naar de route" />
+    </div>
+  );
+}
+
+function LiveCompass({ target, testMode, label = "tot het punt" }: { target: { lat: number | null; lng: number | null }; testMode: boolean; label?: string }) {
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
   const [acc, setAcc] = useState<number | null>(null); // gps accuracy (m)
   const [err, setErr] = useState(false);
@@ -1558,7 +1601,7 @@ function LiveCompass({ target, testMode }: { target: Point; testMode: boolean })
         <b className="block text-[26px] text-coral">
           {distance != null ? (distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`) : "—"}
         </b>
-        <span className="text-sm text-polder-grey">tot het punt</span>
+        <span className="text-sm text-polder-grey">{label}</span>
       </div>
 
       {/* gps quality — safe to show (no coordinates leaked) */}

@@ -12,6 +12,52 @@ export function haversine(a: LL, b: LL): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+function lerp(a: LL, b: LL, t: number): LL {
+  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+}
+
+/**
+ * Nearest point on a polyline to `p`: its distance (m), the segment index, the
+ * fraction t along that segment, and the projected lat/lng. Used to bring an
+ * off-route team back to the drawn route line.
+ */
+export function nearestOnPath(path: LL[], p: LL): { dist: number; seg: number; t: number; point: LL } | null {
+  if (path.length === 0) return null;
+  if (path.length === 1) return { dist: haversine(path[0], p), seg: 0, t: 0, point: path[0] };
+  const R = 6371000, rad = Math.PI / 180;
+  let best = { dist: Infinity, seg: 0, t: 0, point: path[0] };
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i], b = path[i + 1];
+    const lat0 = a.lat * rad;
+    const bx = (b.lng - a.lng) * rad * Math.cos(lat0) * R, by = (b.lat - a.lat) * rad * R;
+    const px = (p.lng - a.lng) * rad * Math.cos(lat0) * R, py = (p.lat - a.lat) * rad * R;
+    const len2 = bx * bx + by * by;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, (px * bx + py * by) / len2)) : 0;
+    const projLL = lerp(a, b, t);
+    const d = haversine(p, projLL);
+    if (d < best.dist) best = { dist: d, seg: i, t, point: projLL };
+  }
+  return best;
+}
+
+/** A point `meters` further along the path from (seg, t) toward the end. */
+export function pointAheadOnPath(path: LL[], seg: number, t: number, meters: number): LL {
+  if (path.length === 0) return { lat: 0, lng: 0 };
+  if (path.length === 1) return path[0];
+  let remaining = meters;
+  let curSeg = seg, curT = t;
+  while (curSeg < path.length - 1) {
+    const a = path[curSeg], b = path[curSeg + 1];
+    const segLen = haversine(a, b) || 1e-9;
+    const distToEnd = segLen * (1 - curT);
+    if (remaining <= distToEnd) return lerp(a, b, curT + remaining / segLen);
+    remaining -= distToEnd;
+    curSeg += 1;
+    curT = 0;
+  }
+  return path[path.length - 1];
+}
+
 /**
  * Snap a set of waypoints to the road network via the public OSRM server.
  * Returns the road geometry (as [lat,lng] pairs) and the per-leg road distance.

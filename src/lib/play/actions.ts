@@ -557,11 +557,45 @@ function routeCoverage(route: [number, number][], trail: { lat: number; lng: num
   return total > 0 ? covered / total : 0;
 }
 
+/** Index of the trail point nearest a target lat/lng. */
+function nearestTrailIdx(trail: { lat: number; lng: number }[], target: { lat: number; lng: number }): number {
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < trail.length; i++) {
+    const d = haversine(trail[i], target);
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return bi;
+}
+
+/**
+ * Fraction of the driven trail (a leg's window) that stayed within the route
+ * corridor. A big off-route excursion drives this down, so a team that only
+ * "covered" the whole route by detouring is scored lower.
+ */
+function routePrecision(route: [number, number][], trailWindow: { lat: number; lng: number }[], corridor: number): number {
+  if (route.length < 2 || trailWindow.length === 0) return 1;
+  const ref = { lat: route[0][0], lng: route[0][1] };
+  const routeXY = route.map((r) => projectXY(ref, { lat: r[0], lng: r[1] }));
+  let on = 0;
+  for (const p of trailWindow) {
+    const px = projectXY(ref, p);
+    let best = Infinity;
+    for (let j = 1; j < routeXY.length; j++) {
+      const d = distToSeg(px, routeXY[j - 1], routeXY[j]);
+      if (d < best) best = d;
+      if (best <= corridor) break;
+    }
+    if (best <= corridor) on++;
+  }
+  return on / trailWindow.length;
+}
+
 export async function scoreRoute(
   legId: string,
 ): Promise<{
   ok: boolean;
   coverage: number;
+  precision: number;
   awarded: number;
   maxPoints: number;
   score: number;
@@ -571,7 +605,7 @@ export async function scoreRoute(
   error?: string;
 }> {
   const ctx = await currentTeam();
-  if (!ctx) return { ok: false, coverage: 0, awarded: 0, maxPoints: 0, score: 0, already: false, route: [], trail: [], error: "Geen actief team." };
+  if (!ctx) return { ok: false, coverage: 0, precision: 0, awarded: 0, maxPoints: 0, score: 0, already: false, route: [], trail: [], error: "Geen actief team." };
   const { team, db } = ctx;
 
   const empty = { route: [] as [number, number][], trail: [] as [number, number][] };
@@ -582,7 +616,7 @@ export async function scoreRoute(
     .eq("id", legId)
     .maybeSingle();
   if (!leg || leg.rally_id !== team.rally_id) {
-    return { ok: false, coverage: 0, awarded: 0, maxPoints: 0, score: await scoreOf(db, team.id), already: false, ...empty, error: "Traject niet gevonden." };
+    return { ok: false, coverage: 0, precision: 0, awarded: 0, maxPoints: 0, score: await scoreOf(db, team.id), already: false, ...empty, error: "Traject niet gevonden." };
   }
 
   // route_points drives the score; for "de harde lijn" fall back to a sensible
@@ -612,15 +646,23 @@ export async function scoreRoute(
   );
   if (done) {
     const cov = Number((done.detail as { coverage?: number }).coverage ?? 0);
-    return { ok: true, coverage: cov, awarded: done.points_delta, maxPoints: maxPts, score: await scoreOf(db, team.id), already: true, route, trail };
+    const prec = Number((done.detail as { precision?: number }).precision ?? 1);
+    return { ok: true, coverage: cov, precision: prec, awarded: done.points_delta, maxPoints: maxPts, score: await scoreOf(db, team.id), already: true, route, trail };
   }
 
   if (route.length < 2) {
-    return { ok: false, coverage: 0, awarded: 0, maxPoints: maxPts, score: await scoreOf(db, team.id), already: false, route, trail, error: "Deze route heeft geen lijn om te scoren." };
+    return { ok: false, coverage: 0, precision: 0, awarded: 0, maxPoints: maxPts, score: await scoreOf(db, team.id), already: false, route, trail, error: "Deze route heeft geen lijn om te scoren." };
   }
 
   const coverage = routeCoverage(route, trailPts, corridor);
-  const awarded = Math.round(coverage * maxPts);
+  // Precision: of the trail driven between the leg's start and end, how much
+  // stayed on the route. A large detour (even one later corrected) lowers this,
+  // so the driven route — not just coverage — counts toward the score.
+  const sIdx = nearestTrailIdx(trailPts, { lat: route[0][0], lng: route[0][1] });
+  const eIdx = nearestTrailIdx(trailPts, { lat: route[route.length - 1][0], lng: route[route.length - 1][1] });
+  const precision = eIdx > sIdx + 2 ? routePrecision(route, trailPts.slice(sIdx, eIdx + 1), corridor) : 1;
+  const effective = coverage * precision;
+  const awarded = Math.round(effective * maxPts);
 
   await db.from("team_events").insert({
     team_id: team.id,
@@ -630,10 +672,10 @@ export async function scoreRoute(
     kind: "assignment",
     points_delta: awarded,
     is_hint: false,
-    detail: { route: true, leg_id: legId, coverage, corridor, maxPoints: maxPts },
+    detail: { route: true, leg_id: legId, coverage, precision, corridor, maxPoints: maxPts },
   });
 
-  return { ok: true, coverage, awarded, maxPoints: maxPts, score: await scoreOf(db, team.id), already: false, route, trail };
+  return { ok: true, coverage, precision, awarded, maxPoints: maxPts, score: await scoreOf(db, team.id), already: false, route, trail };
 }
 
 // ── en-route question ─────────────────────────────────────────────────────────
