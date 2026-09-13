@@ -48,6 +48,7 @@ import {
   updateRallyBranding,
   updateRallySpeedLimit,
   updateRallyIdleLimit,
+  updateRallySos,
 } from "@/lib/designer/actions";
 import { logout } from "@/lib/auth/actions";
 
@@ -568,9 +569,11 @@ export default function EditorClient({
           trails={teamTrails}
           defaultLimit={rally.speed_limit}
           idleLimit={rally.idle_limit}
+          sosCost={rally.sos_cost}
           legExpected={legExpected}
           onSetLimit={(v) => run(() => updateRallySpeedLimit(rally.id, v))}
           onSetIdleLimit={(v) => run(() => updateRallyIdleLimit(rally.id, v))}
+          onSetSos={(v) => run(() => updateRallySos(rally.id, v))}
           onDeleteTeam={(id) => run(() => deleteTeam(rally.id, id))}
           onClearTeams={() => run(() => clearTeams(rally.id))}
           onCorrect={(eventId, finalPoints) => run(() => reviewSubmission(rally.id, eventId, finalPoints))}
@@ -1798,8 +1801,10 @@ function LiveView({
   defaultLimit,
   idleLimit,
   legExpected,
+  sosCost,
   onSetLimit,
   onSetIdleLimit,
+  onSetSos,
   onDeleteTeam,
   onClearTeams,
   onCorrect,
@@ -1817,9 +1822,11 @@ function LiveView({
   trails: Record<string, TeamTrail>;
   defaultLimit: number | null;
   idleLimit: number | null;
+  sosCost: number;
   legExpected: Record<number, number>;
   onSetLimit: (v: number | null) => void;
   onSetIdleLimit: (v: number | null) => void;
+  onSetSos: (v: number) => void;
   onDeleteTeam: (teamId: string) => void;
   onClearTeams: () => void;
   onCorrect: (eventId: string, finalPoints: number) => void;
@@ -2061,6 +2068,17 @@ function LiveView({
                 onBlur={(e) => { const v = e.target.value.trim(); onSetIdleLimit(v === "" ? null : Number(v)); }}
               />
               min
+            </label>
+            <label className="flex items-center gap-1.5 rounded-soft bg-paper px-2 py-1 text-xs text-polder-grey" title="Strafpunten als een team de noodknop 'ik ben verdwaald' gebruikt (kompas terug naar de route). Per traject één keer.">
+              🆘 Verdwaald
+              <input
+                type="number"
+                min={0}
+                defaultValue={sosCost}
+                className="input w-14 px-1.5 py-0.5 text-center text-xs"
+                onBlur={(e) => { const v = e.target.value.trim(); onSetSos(v === "" ? 0 : Number(v)); }}
+              />
+              ptn
             </label>
             <button
               className={`btn text-sm ${notifyOn ? "btn-teal" : "btn-ghost"}`}

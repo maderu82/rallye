@@ -678,6 +678,37 @@ export async function scoreRoute(
   return { ok: true, coverage, precision, awarded, maxPoints: maxPts, score: await scoreOf(db, team.id), already: false, route, trail };
 }
 
+/**
+ * "I'm lost — bring me back to the route" (SOS). Books the rally's sos_cost
+ * penalty ONCE per leg (later presses on the same leg are free), then the device
+ * shows the rescue compass. Always costs points, unlike the automatic rescue.
+ */
+export async function useRouteSos(legId: string): Promise<{ ok: boolean; cost: number; score: number; already: boolean; error?: string }> {
+  const ctx = await currentTeam();
+  if (!ctx) return { ok: false, cost: 0, score: 0, already: false, error: "Geen actief team." };
+  const { team, db } = ctx;
+  const { data: rally } = await db.from("rallies").select("sos_cost").eq("id", team.rally_id).maybeSingle();
+  const cost = Math.max(0, Math.round((rally as { sos_cost?: number } | null)?.sos_cost ?? 10));
+
+  const { data: prev } = await db.from("team_events").select("detail").eq("team_id", team.id).eq("kind", "penalty");
+  const used = (prev ?? []).some((e) => {
+    const d = e.detail as { sos?: boolean; leg_id?: string } | null;
+    return d?.sos === true && d?.leg_id === legId;
+  });
+  if (used) return { ok: true, cost: 0, score: await scoreOf(db, team.id), already: true };
+
+  if (cost > 0) {
+    await db.from("team_events").insert({
+      team_id: team.id,
+      rally_id: team.rally_id,
+      kind: "penalty",
+      points_delta: -cost,
+      detail: { sos: true, leg_id: legId },
+    });
+  }
+  return { ok: true, cost, score: await scoreOf(db, team.id), already: false };
+}
+
 // ── en-route question ─────────────────────────────────────────────────────────
 // enroute_points > 0 → AUTO-graded against the stored answer.
 // enroute_points = 0 → "get to know each other" question: no right/wrong.

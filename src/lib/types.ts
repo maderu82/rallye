@@ -10,6 +10,7 @@ export interface Rally {
   published: boolean;
   speed_limit: number | null; // rally-wide default speed warning threshold (km/h)
   idle_limit: number | null; // minutes stationary before a team is flagged (live view)
+  sos_cost: number; // penalty for the player "I'm lost" SOS button (per leg)
   brand_color: string | null; // primary brand color (hex) for the player app
   brand_color2: string | null; // secondary/accent brand color (hex)
   brand_logo: string | null; // logo URL shown in the player header

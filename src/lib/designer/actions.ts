@@ -180,6 +180,15 @@ export async function updateRallyIdleLimit(rallyId: string, idleLimit: number | 
   revalidatePath(`/ontwerp/${rallyId}`);
 }
 
+/** Penalty for the player's "I'm lost — bring me back" SOS button (per leg). */
+export async function updateRallySos(rallyId: string, sosCost: number) {
+  const db = await createClient();
+  await requireUser(db);
+  const { error } = await db.from("rallies").update({ sos_cost: Math.max(0, Math.round(sosCost)) }).eq("id", rallyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/ontwerp/${rallyId}`);
+}
+
 // ── team management (organizer) ──────────────────────────────────────────────
 async function requireOwner(rallyId: string) {
   const db = await createClient();

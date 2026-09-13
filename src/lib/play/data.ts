@@ -18,7 +18,7 @@ import type {
 
 export interface PlayState {
   team: Team;
-  rally: { id: string; name: string; join_code: string; brand_color: string | null; brand_color2: string | null; brand_logo: string | null };
+  rally: { id: string; name: string; join_code: string; brand_color: string | null; brand_color2: string | null; brand_logo: string | null; sos_cost: number };
   points: Point[];
   legs: Leg[];
   assignments: PublicAssignment[];
@@ -57,9 +57,16 @@ export async function getPlayState(token: string): Promise<PlayState | null> {
   const score = evts.reduce((s, e) => s + e.points_delta, 0);
   const hintsUsed = evts.filter((e) => e.is_hint).length;
 
+  // SOS penalty fetched separately so a not-yet-run migration can't break play.
+  let sosCost = 10;
+  {
+    const { data: sc, error } = await db.from("rallies").select("sos_cost").eq("id", team.rally_id).maybeSingle();
+    if (!error && sc && typeof (sc as { sos_cost?: number }).sos_cost === "number") sosCost = (sc as { sos_cost: number }).sos_cost;
+  }
+
   return {
     team: team as Team,
-    rally: rally as PlayState["rally"],
+    rally: { ...(rally as Omit<PlayState["rally"], "sos_cost">), sos_cost: sosCost },
     points: (points ?? []) as Point[],
     // strip the en-route answer key — never send it to the browser
     legs: ((legs ?? []) as Leg[]).map((l) => ({ ...l, enroute_answer: null })),

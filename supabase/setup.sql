@@ -19,12 +19,14 @@ create table if not exists public.rallies (
   brand_color text,
   brand_color2 text,
   brand_logo  text,
+  sos_cost    int not null default 10,
   deleted_at  timestamptz,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 alter table public.rallies add column if not exists speed_limit int;
 alter table public.rallies add column if not exists idle_limit int;
+alter table public.rallies add column if not exists sos_cost int not null default 10;
 alter table public.rallies add column if not exists brand_color text;
 alter table public.rallies add column if not exists brand_color2 text;
 alter table public.rallies add column if not exists brand_logo text;

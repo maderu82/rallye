@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import type { PlayState } from "@/lib/play/data";
 import type { LeaderboardRow, Leg, Point, PublicAssignment } from "@/lib/types";
 import { BLOCK_BY_TYPE, DANGER_LABEL, GRADING_LABEL, NAV_BY_MODE, ROADBOOK_BY_ID } from "@/lib/blocks";
-import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, scoreRoute, skipAssignment, submitAnswer, submitAnswerWithPhoto, submitMedia, useEnrouteHint, useHint } from "@/lib/play/actions";
+import { answerEnroute, buyDigit, buyNextStep, createMediaUploadUrl, endTestPlay, finishRally, leaveTeam, reportPosition, scoreRoute, skipAssignment, submitAnswer, submitAnswerWithPhoto, submitMedia, useEnrouteHint, useHint, useRouteSos } from "@/lib/play/actions";
 import { NEXT_STEP_COST } from "@/lib/play/constants";
 import TulipGlyph from "@/components/TulipGlyph";
 import RoadArrowGlyph from "@/components/RoadArrowGlyph";
@@ -622,6 +622,7 @@ export default function PlayClient({
             unlockedIndex={unlockedIndex}
             forceUnlocked={step === pushedStep}
             myPos={myPos}
+            sosCost={state.rally.sos_cost}
             testMode={testMode}
             onScored={onScored}
             toast={toast}
@@ -681,6 +682,7 @@ function WaypointView(props: {
   unlockedIndex: number;
   forceUnlocked: boolean;
   myPos: { lat: number; lng: number; acc: number } | null;
+  sosCost: number;
   testMode: boolean;
   onScored: (score: number, badge?: { name: string; icon: string }) => void;
   toast: (m: string) => void;
@@ -692,7 +694,8 @@ function WaypointView(props: {
   answeredEnroute: Set<string>;
   onEnrouteAnswered: (legId: string) => void;
 }) {
-  const { point, leg, assignment, stepIndex, total, completed, unlockedIndex, forceUnlocked, myPos, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
+  const { point, leg, assignment, stepIndex, total, completed, unlockedIndex, forceUnlocked, myPos, sosCost, testMode, onScored, toast, onComplete, onNext, nextLabel, answeredEnroute, onEnrouteAnswered } = props;
+  const [sosActive, setSosActive] = useState(false);
   // A speed test must be started at the beginning of the leg, so it isn't
   // arrival-gated like the other assignments.
   const gated = point.gps_unlock && assignment?.type !== "speed_test";
@@ -721,8 +724,31 @@ function WaypointView(props: {
         ))}
       </div>
 
-      {leg && ["turn", "routebook", "streets", "cryptic", "photo_nav", "dakar"].includes(leg.nav_mode) && Array.isArray(leg.turn_route) && leg.turn_route.length >= 2 ? (
-        <RouteRescue route={leg.turn_route as [number, number][]} myPos={myPos} testMode={testMode} />
+      {leg && Array.isArray(leg.turn_route) && leg.turn_route.length >= 2 ? (
+        <>
+          <RouteRescue
+            route={leg.turn_route as [number, number][]}
+            myPos={myPos}
+            testMode={testMode}
+            autoEnabled={["turn", "routebook", "streets", "cryptic", "photo_nav", "dakar"].includes(leg.nav_mode)}
+            manualActive={sosActive}
+            onClose={() => setSosActive(false)}
+          />
+          {!sosActive ? (
+            <button
+              className="mb-3 w-full rounded-soft border-2 border-[#D85A30]/40 bg-white px-2 py-1.5 text-[13px] font-semibold text-coral"
+              onClick={async () => {
+                const r = await useRouteSos(leg.id);
+                if (r.error) { toast(r.error); return; }
+                onScored(r.score);
+                setSosActive(true);
+                toast(r.already ? "🧭 Terug naar de route." : r.cost > 0 ? `🆘 Hulp aan — −${r.cost} punten. Volg de pijl terug.` : "🧭 Volg de pijl terug naar de route.");
+              }}
+            >
+              🆘 Ik ben verdwaald — breng me terug{sosCost > 0 ? ` (−${sosCost} ptn)` : ""}
+            </button>
+          ) : null}
+        </>
       ) : null}
 
       {leg ? (
@@ -1418,26 +1444,30 @@ function screenAngle(): number {
 // drawn route, a compass appears pointing to a spot a little way FORWARD along
 // the route line — so it brings them back to the line AND facing the right way.
 // Hysteresis: shows past OFF metres, hides again under BACK metres.
-function RouteRescue({ route, myPos, testMode }: { route: [number, number][]; myPos: { lat: number; lng: number; acc: number } | null; testMode: boolean }) {
+function RouteRescue({ route, myPos, testMode, autoEnabled, manualActive, onClose }: { route: [number, number][]; myPos: { lat: number; lng: number; acc: number } | null; testMode: boolean; autoEnabled: boolean; manualActive: boolean; onClose: () => void }) {
   const OFF = 500, BACK = 50, LOOKAHEAD = 60;
-  const [active, setActive] = useState(false);
+  const [autoActive, setAutoActive] = useState(false);
   const path = useMemo(() => route.map(([lat, lng]) => ({ lat, lng })), [route]);
   const near = myPos && path.length >= 2 ? nearestOnPath(path, { lat: myPos.lat, lng: myPos.lng }) : null;
   const dist = near?.dist ?? null;
   useEffect(() => {
-    if (dist == null) return;
-    if (!active && dist > OFF) setActive(true);
-    else if (active && dist < BACK) setActive(false);
-  }, [dist, active]);
+    if (!autoEnabled || dist == null) return;
+    if (!autoActive && dist > OFF) setAutoActive(true);
+    else if (autoActive && dist < BACK) setAutoActive(false);
+  }, [dist, autoActive, autoEnabled]);
+  const active = manualActive || autoActive;
   if (!active || !near) return null;
   const target = pointAheadOnPath(path, near.seg, near.t, LOOKAHEAD);
   return (
     <div className="card mb-3 border-l-4 border-[#D85A30] bg-coral-light">
       <h3 className="mb-1 text-base font-bold text-coral">
-        🧭 Je bent van de route — {dist != null && dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist ?? 0)} m`} ernaast
+        🧭 {dist != null && dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist ?? 0)} m`} van de route
       </h3>
       <p className="mb-1 text-[13px] text-[#8a3b1e]">Volg de pijl terug naar de route. Hij wijst al de goede kant op om verder te gaan.</p>
       <LiveCompass target={target} testMode={testMode} label="terug naar de route" />
+      {manualActive ? (
+        <button className="btn btn-ghost mt-2 w-full text-sm" onClick={onClose}>✓ Ik ben terug op de route</button>
+      ) : null}
     </div>
   );
 }
